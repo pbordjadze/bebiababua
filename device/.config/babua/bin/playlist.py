@@ -105,13 +105,16 @@ def load_channels(path):
     sources = doc.get("sources", {})
     channels = doc.get("channel", [])
     seen, numbers = set(), set()
+    auto = 0  # channels without an explicit `number` are numbered 1, 2, 3, ...
     for i, ch in enumerate(channels, 1):
         if not ch.get("name"):
             raise ValueError(f"channel #{i} has no name")
         if ch["name"] in seen:
             raise ValueError(f"duplicate channel name {ch['name']!r}")
         seen.add(ch["name"])
-        ch.setdefault("number", i)
+        if "number" not in ch:
+            auto += 1
+            ch["number"] = auto
         if ch["number"] in numbers:
             raise ValueError(f"duplicate channel number {ch['number']}")
         numbers.add(ch["number"])

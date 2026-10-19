@@ -61,6 +61,13 @@ class BuildTest(unittest.TestCase):
         text, _, _ = P.build(self.sources, self.channels, self.parsed, dict(self.cfg, IPTV_EPG_URL="x"))
         self.assertTrue(text.startswith("#EXTM3U\n"))
 
+    def test_explicit_numbers_dont_shift_the_rest(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as fh:
+            fh.write('[[channel]]\nname = "T"\nurl = "x"\nnumber = 99\n'
+                     '[[channel]]\nname = "A"\nmatch = "a"\n[[channel]]\nname = "B"\nmatch = "b"\n')
+        _, chans = P.load_channels(fh.name)
+        self.assertEqual([c["number"] for c in chans], [99, 1, 2])
+
     def test_bad_config(self):
         with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as fh:
             fh.write('[[channel]]\nname = "A"\nmatch = "a"\n[[channel]]\nname = "A"\nmatch = "b"\n')
