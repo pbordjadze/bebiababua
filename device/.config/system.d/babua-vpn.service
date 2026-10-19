@@ -1,0 +1,16 @@
+[Unit]
+Description=babua: WireGuard tunnel to the homelab
+After=network-online.target connman-vpn.service
+Wants=network-online.target connman-vpn.service
+ConditionPathExists=/storage/.config/wireguard/babua.config
+
+[Service]
+# Not a oneshot: the retry loop can last while the ISP is down and must not
+# hold up multi-user.target (and therefore Kodi).
+Type=simple
+RemainAfterExit=yes
+ExecStart=/bin/sh /storage/.config/babua/bin/babua-vpn up
+ExecStop=/bin/sh /storage/.config/babua/bin/babua-vpn down
+
+[Install]
+WantedBy=multi-user.target

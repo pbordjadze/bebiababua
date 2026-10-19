@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  babua: make the Samsung remote (via HDMI-CEC) behave like a plain TV remote.
+
+  Watching (FullscreenLiveTV):
+    up / down / CH+ / CH-   next / previous channel, immediately
+    OK, left, right, BACK   channel list overlay (OK there switches, BACK closes)
+    digits                  jump to channel number (Kodi default)
+    stop, pause, menu       ignored - a frozen or vanished picture looks "broken"
+  Channel list window (TVChannels) and Home:
+    BACK never leaves the TV screens, so she cannot get lost in menus.
+
+  Each window is defined for both <remote> (CEC arrives as remote buttons) and
+  <keyboard> (USB keyboard / testing).
+-->
+<keymap>
+  <FullscreenLiveTV>
+    <remote>
+      <up>ChannelUp</up>
+      <down>ChannelDown</down>
+      <pageplus>ChannelUp</pageplus>
+      <pageminus>ChannelDown</pageminus>
+      <select>ActivateWindow(PVROSDChannels)</select>
+      <left>ActivateWindow(PVROSDChannels)</left>
+      <right>ActivateWindow(PVROSDChannels)</right>
+      <back>ActivateWindow(PVROSDChannels)</back>
+      <stop>noop</stop>
+      <pause>noop</pause>
+      <play>noop</play>
+      <forward>noop</forward>
+      <reverse>noop</reverse>
+      <menu>noop</menu>
+      <title>noop</title>
+      <contentsmenu>noop</contentsmenu>
+      <rootmenu>noop</rootmenu>
+    </remote>
+    <keyboard>
+      <up>ChannelUp</up>
+      <down>ChannelDown</down>
+      <return>ActivateWindow(PVROSDChannels)</return>
+      <enter>ActivateWindow(PVROSDChannels)</enter>
+      <left>ActivateWindow(PVROSDChannels)</left>
+      <right>ActivateWindow(PVROSDChannels)</right>
+      <backspace>ActivateWindow(PVROSDChannels)</backspace>
+      <escape>ActivateWindow(PVROSDChannels)</escape>
+      <space>noop</space>
+      <x>noop</x>
+      <c>noop</c>
+    </keyboard>
+  </FullscreenLiveTV>
+
+  <PVROSDChannels>
+    <remote>
+      <menu>noop</menu>
+      <title>noop</title>
+    </remote>
+    <keyboard>
+      <c>noop</c>
+    </keyboard>
+  </PVROSDChannels>
+
+  <TVChannels>
+    <remote>
+      <back>FullScreen</back>
+      <menu>noop</menu>
+      <title>noop</title>
+      <contentsmenu>noop</contentsmenu>
+      <rootmenu>noop</rootmenu>
+    </remote>
+    <keyboard>
+      <backspace>FullScreen</backspace>
+      <escape>FullScreen</escape>
+      <c>noop</c>
+    </keyboard>
+  </TVChannels>
+
+  <Home>
+    <remote>
+      <back>ActivateWindow(TVChannels)</back>
+    </remote>
+    <keyboard>
+      <backspace>ActivateWindow(TVChannels)</backspace>
+      <escape>ActivateWindow(TVChannels)</escape>
+    </keyboard>
+  </Home>
+</keymap>

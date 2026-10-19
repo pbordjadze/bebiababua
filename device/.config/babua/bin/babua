@@ -1,0 +1,229 @@
+#!/usr/bin/env python3
+"""On-box admin commands (run over SSH; tools/babua wraps these).
+
+  babua status              health, playlist, VPN, what is playing
+  babua health              run the health checks now (prints, no alerts)
+  babua playlist [...]      rebuild the channel list now (args go to playlist.py)
+  babua check-streams       probe every stream (skipped while playing)
+  babua play <number>       switch the TV to channel <number>
+  babua key <action>        send a Kodi action: up, down, select, back, stop, ...
+  babua say <text>          show a message on the TV
+  babua screenshot          save a screenshot, print its path
+  babua notify-test         send a test ntfy message
+  babua vpn                 reconnect the WireGuard tunnel
+  babua update <version>    stage a LibreELEC update (e.g. 12.2.2) for the next reboot
+  babua restart-kodi [--force]  restart Kodi (applies CEC settings)
+  babua reboot [--force]    reboot now unless something is playing
+  babua maintenance-reboot  weekly reboot (skipped while playing)
+"""
+
+import glob
+import hashlib
+import os
+import subprocess
+import sys
+import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import babua_lib as B  # noqa: E402
+
+BIN = os.path.dirname(os.path.abspath(__file__))
+
+
+def sh(*cmd):
+    return subprocess.call(list(cmd))
+
+
+def cmd_status(args):
+    with B.Kodi() as k:
+        players = k.call("Player.GetActivePlayers") or []
+        if players:
+            item = k.call("Player.GetItem", {"playerid": players[0]["playerid"], "properties": []})["item"]
+            print(f"playing:  {item.get('label')} ({item.get('type')})")
+        else:
+            ss = k.call("XBMC.GetInfoBooleans", {"booleans": ["System.ScreenSaverActive"]})
+            print("playing:  nothing" + (" (screen blanked)" if ss.get("System.ScreenSaverActive") else ""))
+        labels = k.call("XBMC.GetInfoLabels", {"labels": ["System.BuildVersion", "System.Uptime", "System.CPUTemperature"]})
+        print(f"kodi:     {labels['System.BuildVersion']}  up {labels['System.Uptime']}")
+    pl = B.read_json(os.path.join(B.STATE_DIR, "playlist.json"))
+    if pl:
+        print(f"playlist: {pl.get('channels')} channels, built {time.ctime(pl.get('built_at', 0))}, missing: {pl.get('missing') or '-'}")
+    with open("/etc/os-release") as fh:
+        print("os:      ", next((l.split("=", 1)[1].strip().strip('"') for l in fh if l.startswith("PRETTY_NAME")), "?"))
+    print()
+    return sh(sys.executable, os.path.join(BIN, "health.py"), "--print")
+
+
+def cmd_health(args):
+    return sh(sys.executable, os.path.join(BIN, "health.py"), "--print")
+
+
+def cmd_playlist(args):
+    return sh(sys.executable, os.path.join(BIN, "playlist.py"), *args)
+
+
+def cmd_check_streams(args):
+    return sh(sys.executable, os.path.join(BIN, "playlist.py"), "--check-streams")
+
+
+def cmd_play(args):
+    number = int(args[0])
+    with B.Kodi() as k:
+        for ch in k.tv_channels():
+            if ch.get("channelnumber") == number:
+                k.play_channel(ch["channelid"])
+                print("playing", ch["label"])
+                return 0
+    print("no channel", number)
+    return 1
+
+
+def cmd_key(args):
+    with B.Kodi() as k:
+        for action in args:
+            k.call("Input.ExecuteAction", {"action": action})
+            time.sleep(0.3)
+    return 0
+
+
+def cmd_say(args):
+    with B.Kodi() as k:
+        k.notify("", " ".join(args), 15000)
+    return 0
+
+
+def cmd_screenshot(args):
+    before = set(glob.glob(os.path.join(B.SCREENSHOT_DIR, "*.png")))
+    with B.Kodi() as k:
+        k.call("Input.ExecuteAction", {"action": "screenshot"})
+    for _ in range(20):
+        time.sleep(0.5)
+        new = set(glob.glob(os.path.join(B.SCREENSHOT_DIR, "*.png"))) - before
+        if new:
+            print(sorted(new)[-1])
+            return 0
+    print("no screenshot appeared", file=sys.stderr)
+    return 1
+
+
+def cmd_notify_test(args):
+    cfg = B.load_config()
+    B.notify(cfg, "Test", "ntfy from the TV box works.", 3, "tada")
+    return 0
+
+
+def cmd_vpn(args):
+    return sh("/bin/sh", os.path.join(BIN, "babua-vpn"), "restart")
+
+
+def cmd_update(args):
+    """LibreELEC applies any .tar found in /storage/.update on the next boot."""
+    version = args[0]
+    name = f"LibreELEC-RPi2.arm-{version}.tar"
+    url = f"https://releases.libreelec.tv/{name}"
+    os.makedirs("/storage/.update", exist_ok=True)
+    dest = f"/storage/.update/{name}"
+    print("downloading", url)
+    expected = B.http_get(url + ".sha256", timeout=30).decode().split()[0]
+    if sh("curl", "-fL", "--retry", "3", "-o", dest + ".part", url) != 0:
+        return 1
+    h = hashlib.sha256()
+    with open(dest + ".part", "rb") as fh:
+        for block in iter(lambda: fh.read(1 << 20), b""):
+            h.update(block)
+    if h.hexdigest() != expected:
+        os.remove(dest + ".part")
+        print("checksum mismatch; aborted")
+        return 1
+    os.replace(dest + ".part", dest)
+    print("staged; LibreELEC installs it on the next reboot (`babua reboot`, or the weekly one)")
+    return 0
+
+
+def idle_reboot(force=False):
+    if not force and B.kodi_try(lambda k: k.is_playing(), default=False):
+        print("something is playing; not rebooting (use --force)")
+        return 1
+    open(B.QUIET_FLAG, "w").close()   # don't start a channel nobody watches
+    B.log("rebooting")
+    return sh("systemctl", "reboot")
+
+
+def cmd_reboot(args):
+    return idle_reboot(force="--force" in args)
+
+
+def cmd_maintenance_reboot(args):
+    cfg = B.load_config()
+    if not B.cfg_bool(cfg, "WEEKLY_REBOOT", True):
+        return 0
+    with open("/proc/uptime") as fh:
+        uptime = float(fh.read().split()[0])
+    # Guards against a reboot loop if the clock is wrong (the Pi has no RTC).
+    if uptime < 86400 or not os.path.exists("/run/systemd/timesync/synchronized"):
+        B.log("maintenance reboot skipped: uptime < 1 day or clock not synced")
+        return 0
+    return idle_reboot()
+
+
+def cmd_post_deploy(args):
+    """Called by `tools/babua deploy` right after new files were unpacked."""
+    old_wg = args[0] if args else ""
+    sh("systemctl", "daemon-reload")
+    for timer in ("babua-playlist", "babua-health", "babua-streamcheck", "babua-reboot"):
+        sh("systemctl", "start", f"{timer}.timer")
+    sh("systemctl", "restart", "iptables")
+    sh(sys.executable, os.path.join(BIN, "prekodi.py"))
+    sh("systemctl", "restart", "babuad")      # re-applies Kodi settings on connect
+    B.kodi_try(lambda k: k.call("Input.ExecuteAction", {"action": "reloadkeymaps"}))
+    sh(sys.executable, os.path.join(BIN, "playlist.py"))
+    wg = "/storage/.config/wireguard/babua.config"
+    new_wg = hashlib.sha256(open(wg, "rb").read()).hexdigest() if os.path.exists(wg) else ""
+    if new_wg != old_wg:
+        # delayed, so this SSH session (probably running over the tunnel) returns first
+        sh("systemd-run", "--on-active=5", "--unit=babua-vpn-reload",
+           "/bin/sh", os.path.join(BIN, "babua-vpn"), "restart")
+        print("WireGuard config changed: tunnel restarts in 5 s")
+    print("deployed. CEC changes take effect after `babua restart-kodi`.")
+    return 0
+
+
+def cmd_restart_kodi(args):
+    if B.kodi_try(lambda k: k.is_playing(), default=False) and "--force" not in args:
+        print("something is playing; use --force")
+        return 1
+    return sh("systemctl", "restart", "kodi")
+
+
+COMMANDS = {
+    "post-deploy": cmd_post_deploy,
+    "restart-kodi": cmd_restart_kodi,
+    "status": cmd_status,
+    "health": cmd_health,
+    "playlist": cmd_playlist,
+    "check-streams": cmd_check_streams,
+    "play": cmd_play,
+    "key": cmd_key,
+    "say": cmd_say,
+    "screenshot": cmd_screenshot,
+    "notify-test": cmd_notify_test,
+    "vpn": cmd_vpn,
+    "update": cmd_update,
+    "reboot": cmd_reboot,
+    "maintenance-reboot": cmd_maintenance_reboot,
+}
+
+
+def main():
+    if len(sys.argv) < 2 or sys.argv[1] not in COMMANDS:
+        print(__doc__)
+        return 2
+    try:
+        return COMMANDS[sys.argv[1]](sys.argv[2:])
+    except (OSError, B.KodiError) as exc:
+        print("error:", exc, file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,13 @@
+[Unit]
+Description=babua: keep Kodi behaving like a TV (resume, retry, converge)
+# No ordering against kodi.service (it sits behind multi-user.target, so that
+# would be a cycle); babuad simply retries until Kodi answers.
+StartLimitIntervalSec=0
+
+[Service]
+ExecStart=/usr/bin/python3 -u /storage/.config/babua/bin/babuad.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

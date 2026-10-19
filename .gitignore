@@ -1,0 +1,7 @@
+# secrets, keys and anything built from them
+/site/
+/build/
+*.img
+*.img.gz
+__pycache__/
+*.pyc

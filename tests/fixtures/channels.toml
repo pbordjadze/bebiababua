@@ -1,0 +1,37 @@
+[sources.provider]
+url_env = "IPTV_M3U_URL"
+
+[[channel]]
+name = "რუსთავი 2"
+match = ["Rustavi 2"]          # matches tvg-name, not the display name
+group = "ქართული"
+logo = "rustavi2.png"
+
+[[channel]]
+name = "იმედი"
+match = ["imedi tv"]
+group = "ქართული"
+
+[[channel]]
+name = "Первый канал"
+match_re = "^Первый"
+group = "Русские"
+
+[[channel]]
+name = "НТВ"
+tvg_id = "ntv.ru"
+group = "Русские"
+
+[[channel]]
+name = "Культура"
+match = ["Культура", "россия к"]
+group = "Русские"
+
+[[channel]]
+name = "Missing One"
+match = ["Does Not Exist"]
+
+[[channel]]
+name = "Direct"
+url_env = "DIRECT_URL"
+number = 20

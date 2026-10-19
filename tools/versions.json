@@ -1,0 +1,30 @@
+{
+  "_comment": "Pinned inputs of the image. To upgrade, edit url+sha256 (sha256 from the .sha256 file next to each release / sha256sum of the zip) and rebuild.",
+  "libreelec": {
+    "version": "12.2.1",
+    "url": "https://releases.libreelec.tv/LibreELEC-RPi2.arm-12.2.1.img.gz",
+    "sha256": "adbfbaf216202c9d39381079692828945597e0dfedb62f9f6d02501fc1088918"
+  },
+  "addons": {
+    "pvr.iptvsimple": {
+      "url": "https://addons.libreelec.tv/12.2.0/ARMv7/arm/pvr.iptvsimple/pvr.iptvsimple-21.11.0.3.zip",
+      "sha256": "0613b3f16fc14a47ee2112b716064633cbba6bc36d62d525b701d7e4ee6c31f6"
+    },
+    "inputstream.ffmpegdirect": {
+      "url": "https://addons.libreelec.tv/12.2.0/ARMv7/arm/inputstream.ffmpegdirect/inputstream.ffmpegdirect-21.3.8.3.zip",
+      "sha256": "82ad974ae96c1a8e4fc849af874472d4004061fbba059b57aa5071ef37b986e6"
+    },
+    "inputstream.adaptive": {
+      "url": "https://addons.libreelec.tv/12.2.0/ARMv7/arm/inputstream.adaptive/inputstream.adaptive-21.5.25.1.zip",
+      "sha256": "5bb06b41ab849c5285755a30f8e849d86f72e91bcd992db7d9692f33cf6e3722"
+    },
+    "inputstream.rtmp": {
+      "url": "https://addons.libreelec.tv/12.2.0/ARMv7/arm/inputstream.rtmp/inputstream.rtmp-21.1.2.3.zip",
+      "sha256": "9bd865a9fabda4958adaea73b039f78ef7a2bf148fa49e9717be69e1f6c1fa4f"
+    },
+    "resource.language.ru_ru": {
+      "url": "https://mirrors.kodi.tv/addons/omega/resource.language.ru_ru/resource.language.ru_ru-11.0.105.zip",
+      "sha256": "51af393aef66d64c9fb2343951c1050f95458dc416cdbca3156df0db89280cfb"
+    }
+  }
+}

@@ -1,0 +1,8 @@
+[Unit]
+Description=babua: weekly maintenance reboot (Monday 04:30, only if idle)
+
+[Timer]
+OnCalendar=Mon *-*-* 04:30
+
+[Install]
+WantedBy=timers.target

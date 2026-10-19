@@ -1,0 +1,8 @@
+[Unit]
+Description=babua: daily stream check (skipped while something is playing)
+
+[Timer]
+OnCalendar=*-*-* 05:20
+
+[Install]
+WantedBy=timers.target

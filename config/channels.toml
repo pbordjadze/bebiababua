@@ -1,0 +1,82 @@
+# Grandma's channel list. Order = channel numbers (1, 2, 3, ...) unless a
+# channel sets `number`. Only what is listed here appears on the TV.
+#
+# Find the exact names your provider uses with:
+#   tools/babua list-source provider -g rustavi
+# and check the result before deploying with:
+#   tools/babua preview
+#
+# Per channel:
+#   name      what she sees (Georgian / Russian, whatever she knows it as)
+#   match     provider channel name(s), case-insensitive; first hit wins
+#   match_re  regular expression on the provider name (alternative to match)
+#   tvg_id    match on the provider's tvg-id instead
+#   url / url_env   a direct stream instead of the provider (url_env = a
+#             variable in site/secrets.env, for URLs that contain tokens)
+#   source    restrict the lookup to one [sources.*] entry
+#   group     "ქართული" / "Русские" - shown as channel groups in Kodi
+#   logo      file in config/logos/ or a URL; default: the provider's logo
+#   epg_id    override tvg-id for the programme guide
+#   kodiprops extra #KODIPROP lines, e.g. ["inputstream=inputstream.adaptive"]
+#
+# NOTE: names/matches below are placeholders - replace them with what
+# the subscription actually contains (see docs/VERIFY.md).
+
+[sources.provider]
+url_env = "IPTV_M3U_URL"
+
+# A second source can serve as a fallback for channels the provider lacks:
+# [sources.backup]
+# url_env = "IPTV_BACKUP_M3U_URL"
+
+# ---------------------------------------------------------------- Georgian
+[[channel]]
+name = "პირველი არხი"
+match = ["1TV Georgia", "1TV GE", "Pirveli Arkhi"]
+group = "ქართული"
+
+[[channel]]
+name = "რუსთავი 2"
+match = ["Rustavi 2", "Rustavi 2 HD"]
+group = "ქართული"
+
+[[channel]]
+name = "იმედი"
+match = ["Imedi TV", "Imedi"]
+group = "ქართული"
+
+[[channel]]
+name = "ტვ პირველი"
+match = ["TV Pirveli", "Pirveli TV"]
+group = "ქართული"
+
+[[channel]]
+name = "ფორმულა"
+match = ["Formula TV", "Formula"]
+group = "ქართული"
+
+[[channel]]
+name = "პოსტივი"
+match = ["POSTV", "PosTV"]
+group = "ქართული"
+
+# ----------------------------------------------------------------- Russian
+[[channel]]
+name = "Первый канал"
+match = ["Первый канал", "Perviy kanal", "1 kanal"]
+group = "Русские"
+
+[[channel]]
+name = "Россия 1"
+match = ["Россия 1", "Rossiya 1"]
+group = "Русские"
+
+[[channel]]
+name = "НТВ"
+match = ["НТВ", "NTV"]
+group = "Русские"
+
+[[channel]]
+name = "Культура"
+match = ["Россия К", "Культура", "Kultura"]
+group = "Русские"

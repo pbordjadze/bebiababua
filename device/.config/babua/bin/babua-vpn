@@ -1,0 +1,49 @@
+#!/bin/sh
+# Bring up the WireGuard tunnel defined in /storage/.config/wireguard/babua.config.
+# connman-vpnd loads that file and exposes it as a "vpn_<host>" service; the
+# name depends on the endpoint, so look it up instead of hard-coding it.
+#   babua-vpn up       wait for the network, then connect (babua-vpn.service)
+#   babua-vpn restart  disconnect + connect (health check, manual use)
+#   babua-vpn down
+
+service() {
+  connmanctl services 2>/dev/null | tr ' ' '\n' | grep '^vpn_' | head -n1
+}
+
+connect() {
+  svc=$(service)
+  [ -n "$svc" ] || { echo "no connman VPN service (is babua.config valid?)"; return 1; }
+  connmanctl connect "$svc"
+}
+
+case "$1" in
+  up)
+    [ -f /storage/.config/wireguard/babua.config ] || { echo "VPN not configured"; exit 0; }
+    # Keep trying: at boot DNS/network may lag, and an ISP outage may last hours.
+    i=0
+    while [ $i -lt 120 ]; do
+      if connect && wg show 2>/dev/null | grep -q interface; then
+        echo "VPN up"
+        exit 0
+      fi
+      i=$((i + 1))
+      sleep 15
+    done
+    echo "VPN still down after 30 min; health check keeps retrying"
+    exit 0
+    ;;
+  restart)
+    svc=$(service)
+    [ -n "$svc" ] && connmanctl disconnect "$svc"
+    sleep 2
+    connect
+    ;;
+  down)
+    svc=$(service)
+    [ -n "$svc" ] && connmanctl disconnect "$svc"
+    ;;
+  *)
+    echo "usage: $0 up|restart|down"
+    exit 2
+    ;;
+esac

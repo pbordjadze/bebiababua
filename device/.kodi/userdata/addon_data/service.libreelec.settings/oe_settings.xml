@@ -1,0 +1,14 @@
+<?xml version="1.0" ?>
+<libreelec>
+	<addon_config/>
+	<settings>
+		<libreelec>
+			<wizard_completed>True</wizard_completed>
+		</libreelec>
+		<updates>
+			<AutoUpdate>manual</AutoUpdate>
+			<UpdateNotify>0</UpdateNotify>
+			<SubmitStats>0</SubmitStats>
+		</updates>
+	</settings>
+</libreelec>

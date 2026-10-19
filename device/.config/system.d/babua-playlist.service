@@ -1,0 +1,9 @@
+[Unit]
+Description=babua: rebuild the channel list from the provider playlist
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /storage/.config/babua/bin/playlist.py
+TimeoutStartSec=10min

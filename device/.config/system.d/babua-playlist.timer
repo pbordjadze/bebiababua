@@ -1,0 +1,9 @@
+[Unit]
+Description=babua: refresh the channel list at boot and every 6 hours
+
+[Timer]
+OnBootSec=45s
+OnUnitActiveSec=6h
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,6 @@
+[Unit]
+Description=babua: weekly maintenance reboot when idle
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /storage/.config/babua/bin/babua maintenance-reboot

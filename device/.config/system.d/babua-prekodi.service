@@ -1,0 +1,12 @@
+[Unit]
+Description=babua: enforce Kodi settings before Kodi starts
+Before=kodi.service
+After=userconfig.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /storage/.config/babua/bin/prekodi.py
+TimeoutStartSec=60
+
+[Install]
+WantedBy=kodi.service

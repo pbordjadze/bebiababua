@@ -1,0 +1,14 @@
+#EXTM3U url-tvg="http://epg.example/guide.xml.gz"
+#EXTINF:-1 tvg-id="rustavi2.ge" tvg-name="Rustavi 2" tvg-logo="http://logo/r2.png" group-title="Georgia, HD",Rustavi 2 HD
+#EXTVLCOPT:http-user-agent=SpecialPlayer/1.0
+http://provider.example/live/user/pass/101.m3u8
+#EXTINF:-1 tvg-id="imedi.ge" tvg-logo="http://logo/imedi.png" group-title="Georgia",Imedi TV
+http://provider.example/live/user/pass/102.m3u8
+#EXTINF:-1 tvg-id="1tv.ru" group-title="Russia",Первый канал HD
+#KODIPROP:inputstream=inputstream.adaptive
+http://provider.example/live/user/pass/201.m3u8
+#EXTINF:-1 tvg-id="ntv.ru",НТВ
+#EXTGRP:Russia
+http://provider.example/live/user/pass/202.m3u8
+#EXTINF:-1 tvg-id="kultura.ru",Россия К
+http://provider.example/live/user/pass/203.m3u8

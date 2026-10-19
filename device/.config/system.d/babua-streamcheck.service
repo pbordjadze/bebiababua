@@ -1,0 +1,8 @@
+[Unit]
+Description=babua: probe every channel stream
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /storage/.config/babua/bin/playlist.py --check-streams
+TimeoutStartSec=20min

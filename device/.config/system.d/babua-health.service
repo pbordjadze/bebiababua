@@ -1,0 +1,7 @@
+[Unit]
+Description=babua: health check, self-repair and alerts
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /storage/.config/babua/bin/health.py
+TimeoutStartSec=4min
