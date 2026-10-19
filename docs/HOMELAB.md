@@ -104,8 +104,10 @@ The homelab (`~/projects/bebiababua`, this branch) can reach the box for
 diagnosis without the `site/` secrets:
 
 - `ssh babua-tv`: its own key `~/.ssh/babua_tv_ed25519`, host key pinned in
-  `~/.ssh/babua_tv_known_hosts` (`~/.ssh/babua_tv.conf`). The key's public half
-  must be in `site/authorized_keys`, or the next `deploy` drops it.
+  `~/.ssh/babua_tv_known_hosts` (`~/.ssh/babua_tv.conf`). It was added to the
+  box's `/storage/.ssh/authorized_keys` by hand. There's no `site/` (and no
+  deploys) yet; whoever creates one with `tools/babua init` must put
+  `~/.ssh/babua_tv_ed25519.pub` in `site/authorized_keys`, or `deploy` drops it.
 - `babua-tv status | logs [unit] | screenshot | play N | key ... | ssh ...`:
   `tools/babua` with `BABUA_SITE=~/.config/babua-site` (only the box's public
   host key). `deploy` and `image` refuse there; changed files were copied by
