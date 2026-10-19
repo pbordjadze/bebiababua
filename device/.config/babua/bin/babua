@@ -38,6 +38,24 @@ def sh(*cmd):
     return subprocess.call(list(cmd))
 
 
+CONFIG = os.path.dirname(B.BABUA_DIR)   # /storage/.config
+IWD_FILES = [os.path.join(CONFIG, "iwd", "main.conf"),
+             os.path.join(CONFIG, "system.d", "iwd.service.d", "babua.conf")]
+IWD_APPLIED = os.path.join(B.STATE_DIR, "iwd.applied")   # digest of IWD_FILES iwd last started with
+
+
+def iwd_digest():
+    h = hashlib.sha256()
+    for path in IWD_FILES:
+        try:
+            with open(path, "rb") as fh:
+                h.update(fh.read())
+        except FileNotFoundError:
+            pass
+        h.update(b"\0")
+    return h.hexdigest()
+
+
 def cmd_status(args):
     with B.Kodi() as k:
         players = k.call("Player.GetActivePlayers") or []
@@ -280,6 +298,17 @@ def cmd_post_deploy(args):
         sh("systemd-run", "--on-active=5", "--unit=babua-vpn-reload",
            "/bin/sh", os.path.join(BIN, "babua-vpn"), "restart")
         print("WireGuard config changed: tunnel restarts in 5 s")
+    iwd = iwd_digest()
+    try:
+        applied = open(IWD_APPLIED).read().strip()
+    except FileNotFoundError:
+        applied = ""
+    if iwd != applied:
+        # iwd reads its settings only at start; delayed like the VPN, because
+        # Wi-Fi drops for ~20 s and this session may be running over it
+        sh("systemd-run", "--on-active=5", "--unit=babua-iwd-reload", "/bin/sh", "-c",
+           f"systemctl restart iwd && echo {iwd} > {IWD_APPLIED}")
+        print("Wi-Fi settings changed: Wi-Fi restarts in 5 s")
     print("deployed. CEC changes take effect after `babua restart-kodi`.")
     return 0
 

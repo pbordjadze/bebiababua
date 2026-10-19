@@ -15,7 +15,7 @@ shell on the box, where the same tools are on the PATH as `babua ...`.
 | Screen dark/dimmed, nothing playing | TV came on without waking Kodi | `tools/babua play N` and tell her "press OK when it's dark". If it happens daily, see VERIFY §3. |
 | "Канал сейчас не работает" | That stream is down upstream | `tools/babua check-streams`; if needed, remap the channel in `channels.toml` → `deploy` |
 | Every channel fails | Provider down, account expired or IP blocked | `tools/babua logs babua-playlist`; `tools/babua ssh 'cat /storage/.cache/babua/playlist.json'` |
-| Picture stutters | Weak network, HEVC stream, or under-voltage | `tools/babua health` (power), `tools/babua codecs` |
+| Picture stutters | Weak network, HEVC stream, or under-voltage | `tools/babua health` (power), `tools/babua codecs`; Wi-Fi under load: `tools/babua ssh 'ping -c 40 -i 0.5 <their router>'` while a channel plays (loss = Wi-Fi, see `iw dev wlan0 link`) |
 | Kodi menus in English / wrong look | Someone changed settings | `tools/babua restart-kodi` (prekodi + babuad put them back) |
 | Box unreachable | Power, internet or VPN | Check the heartbeat monitor; ask them to unplug the Pi and plug it back in; last resort: swap in the spare SD card |
 | Kodi in red/maroon "safe mode" | Kodi crashed repeatedly at start | `tools/babua kodi-log`, fix the cause, then `tools/babua restart-kodi` |
@@ -69,6 +69,7 @@ truth, and `tools/babua image` reproduces the same box at any time.
 /storage/.cache/babua/         playlist.m3u, playlist.json, health.json, player.json, outbox.jsonl
 /storage/.config/system.d/     babua*.service / *.timer
 /storage/.config/wireguard/    babua.config (connman WireGuard provider)
+/storage/.config/iwd/          main.conf (Wi-Fi: 2.4 GHz only), read via system.d/iwd.service.d/
 /storage/.kodi/temp/kodi.log   Kodi log
 journalctl -u babuad -u babua-health -u babua-playlist -u kodi
 ```

@@ -90,7 +90,9 @@ Samsung calls CEC **Anynet+ (HDMI-CEC)**.
       the same image** and leave it at their house labelled "TV spare". Then
       anyone can recover from a dead card by swapping it.
 - [ ] **Ethernet** if at all possible. For Wi-Fi only, set `WIFI_SSID` and
-      `WIFI_PSK`; the Pi 3's 2.4 GHz Wi-Fi is marginal for HD streams.
+      `WIFI_PSK`. The box uses 2.4 GHz only (`device/.config/iwd/main.conf`):
+      on their Eero mesh the Pi 3's 5 GHz link collapsed under streaming load
+      while 2.4 GHz carried 4 MB/s.
 - [ ] Connect the HDMI cable directly to the TV (not through a soundbar)
       unless you've verified CEC works through it.
 - [ ] A case with a heatsink; check that `temperature` stays under ~70 °C
