@@ -28,6 +28,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import tarfile
 import tempfile
 import urllib.request
 import uuid
@@ -157,6 +158,19 @@ def main():
                 for f in files:
                     if f.endswith(".so") or ".so." in f or root.endswith("/bin"):
                         os.chmod(os.path.join(root, f), 0o755)
+
+        # Tailscale (static ARM build) for remote admin
+        ts = versions.get("tailscale")
+        if ts:
+            ts_dir = os.path.join(tree, ".config", "babua", "tailscale")
+            os.makedirs(ts_dir, exist_ok=True)
+            with tarfile.open(fetch(ts["url"], ts["sha256"])) as tf:
+                for member in tf.getmembers():
+                    name = os.path.basename(member.name)
+                    if member.isfile() and name in ("tailscale", "tailscaled"):
+                        with tf.extractfile(member) as src, open(os.path.join(ts_dir, name), "wb") as dst:
+                            shutil.copyfileobj(src, dst)
+                        os.chmod(os.path.join(ts_dir, name), 0o755)
 
         img = os.path.join(tmp, "image.img")
         with gzip.open(le_gz, "rb") as src, open(img, "wb") as dst:

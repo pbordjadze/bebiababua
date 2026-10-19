@@ -344,6 +344,36 @@ CEC_SETTINGS = {
 }
 
 
+TAILSCALE_DIR = os.path.join(BABUA_DIR, "tailscale")
+TAILSCALE_SOCKET = "/run/tailscale/tailscaled.sock"
+
+
+def tailscale_installed():
+    return os.path.exists(os.path.join(TAILSCALE_DIR, "tailscale"))
+
+
+def tailscale(*args, timeout=30):
+    return run([os.path.join(TAILSCALE_DIR, "tailscale"), f"--socket={TAILSCALE_SOCKET}", *args], timeout=timeout)
+
+
+def tailscale_status():
+    """`tailscale status --json` as a dict, or None if tailscaled isn't answering."""
+    rc, out = tailscale("status", "--json")
+    if rc != 0:
+        return None
+    try:
+        return json.loads(out)
+    except ValueError:
+        return None
+
+
+def tailscale_up(cfg, authkey):
+    """Join the tailnet. DNS and firewall handling stay with LibreELEC."""
+    hostname = cfg.get("HOSTNAME") or socket.gethostname()
+    return tailscale("up", f"--authkey={authkey}", f"--hostname={hostname}",
+                     "--accept-dns=false", "--netfilter-mode=off", timeout=90)
+
+
 def wireguard_config(cfg):
     """connman WireGuard provider file (.config/wireguard/babua.config)."""
     lines = [

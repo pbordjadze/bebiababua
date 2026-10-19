@@ -26,5 +26,10 @@
       "url": "https://mirrors.kodi.tv/addons/omega/resource.language.ru_ru/resource.language.ru_ru-11.0.105.zip",
       "sha256": "51af393aef66d64c9fb2343951c1050f95458dc416cdbca3156df0db89280cfb"
     }
+  },
+  "tailscale": {
+    "version": "1.104.1",
+    "url": "https://pkgs.tailscale.com/stable/tailscale_1.104.1_arm.tgz",
+    "sha256": "aea7ae225989d302444b10b44aa42e89fdfa2a691b4d124ed710b4753518a875"
   }
 }

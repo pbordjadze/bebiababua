@@ -31,7 +31,7 @@ FIRST_BOOT_ONLY = {
 }
 
 WANTS = {
-    "multi-user.target.wants": ["babuad.service", "babua-vpn.service"],
+    "multi-user.target.wants": ["babuad.service", "babua-vpn.service", "babua-tailscale.service"],
     "timers.target.wants": ["babua-playlist.timer", "babua-health.timer",
                             "babua-streamcheck.timer", "babua-reboot.timer"],
     "kodi.service.wants": ["babua-prekodi.service"],
@@ -62,14 +62,14 @@ def check(cfg, site_dir):
         errors.append("site/ssh_host_ed25519_key missing - run `tools/babua init`")
     if not cfg.get("IPTV_M3U_URL"):
         warnings.append("IPTV_M3U_URL is empty - only direct-URL channels (e.g. the test channel) will work")
+    if not cfg.get("WG_ENDPOINT") and not cfg.get("TAILSCALE_AUTHKEY"):
+        warnings.append("no TAILSCALE_AUTHKEY: join the tailnet on site with `babua tailscale-up <key>`")
     if cfg.get("WG_ENDPOINT"):
         for key in ("WG_ADDRESS", "WG_ALLOWED_IPS", "WG_PRIVATE_KEY", "WG_SERVER_PUBLIC_KEY"):
             if not cfg.get(key):
                 errors.append(f"{key} is empty but WG_ENDPOINT is set")
         if "0.0.0.0/0" in cfg.get("WG_ALLOWED_IPS", ""):
             warnings.append("WG_ALLOWED_IPS routes everything through the VPN (IPTV too)")
-    else:
-        warnings.append("WG_ENDPOINT empty - no VPN, remote admin only from grandma's LAN")
     if not cfg.get("NTFY_URL"):
         warnings.append("NTFY_URL empty - no alerts")
     if not cfg.get("HEARTBEAT_URL"):

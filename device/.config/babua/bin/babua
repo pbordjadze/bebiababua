@@ -11,6 +11,7 @@
   babua show <file|url>     play a clip on the TV, then back to the channel
   babua screenshot          save a screenshot, print its path
   babua notify-test         send a test ntfy message
+  babua tailscale-up <key>  join your tailnet (auth key from the Tailscale admin console)
   babua vpn                 reconnect the WireGuard tunnel
   babua vpn-setup HOST[:PORT] SERVER_PUBKEY [ADDR/PREFIX] [ALLOWED_IPS]
                             turn the tunnel on from the box (e.g. from a phone)
@@ -133,6 +134,32 @@ def cmd_screenshot(args):
 def cmd_notify_test(args):
     cfg = B.load_config()
     B.notify(cfg, "Test", "ntfy from the TV box works.", 3, "tada")
+    return 0
+
+
+def cmd_tailscale_up(args):
+    """Join the tailnet with an auth key (from the Tailscale admin console)."""
+    if not B.tailscale_installed():
+        print("tailscale is not part of this image")
+        return 1
+    cfg = B.load_config()
+    key = args[0] if args else cfg.get("TAILSCALE_AUTHKEY")
+    if not key:
+        print("usage: babua tailscale-up tskey-auth-...")
+        return 2
+    sh("systemctl", "start", "babua-tailscale")
+    for _ in range(15):
+        if B.tailscale_status() is not None:
+            break
+        time.sleep(2)
+    rc, out = B.tailscale_up(cfg, key)
+    print(out)
+    if rc != 0:
+        return rc
+    st = B.tailscale_status() or {}
+    me = st.get("Self") or {}
+    print(f"joined as {me.get('DNSName', '?').rstrip('.')} {' '.join(me.get('TailscaleIPs') or [])}")
+    print("Now, in the Tailscale admin console: this machine -> ... -> Disable key expiry.")
     return 0
 
 
@@ -279,6 +306,7 @@ COMMANDS = {
     "notify-test": cmd_notify_test,
     "vpn": cmd_vpn,
     "vpn-setup": cmd_vpn_setup,
+    "tailscale-up": cmd_tailscale_up,
     "update": cmd_update,
     "reboot": cmd_reboot,
     "maintenance-reboot": cmd_maintenance_reboot,

@@ -1,7 +1,8 @@
-# babua firewall (IPv4) - LibreELEC "home" profile plus the WireGuard tunnel.
+# babua firewall (IPv4) - LibreELEC "home" profile plus the VPN.
 # Loaded by LibreELEC's iptables.service because .cache/services/iptables.conf
-# sets RULES=custom. Inbound: loopback, replies, the VPN, and private LAN ranges
-# (SSH is key-only, the Kodi web UI is password protected). Everything else drops.
+# sets RULES=custom. Inbound: loopback, replies, Tailscale/WireGuard, and
+# private LAN ranges (SSH is key-only, the Kodi web UI is password
+# protected). Everything else drops.
 *filter
 :INPUT DROP [0:0]
 :FORWARD DROP [0:0]
@@ -10,6 +11,8 @@
 -A INPUT -i lo -j ACCEPT
 -A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 -A INPUT -i wg+ -m conntrack --ctstate NEW -j ACCEPT
+-A INPUT -i tailscale+ -m conntrack --ctstate NEW -j ACCEPT
+-A INPUT -p udp --dport 41641 -j ACCEPT
 -A INPUT -p icmp --icmp-type echo-request -j ACCEPT
 -A INPUT -j private-subnets
 -A private-subnets -s 10.0.0.0/8 -i eth+ -m conntrack --ctstate NEW -j ACCEPT

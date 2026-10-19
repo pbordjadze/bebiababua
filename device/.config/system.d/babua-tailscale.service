@@ -1,0 +1,17 @@
+[Unit]
+Description=babua: Tailscale (remote admin)
+After=network-online.target
+Wants=network-online.target
+# binaries are baked into the image (tools/versions.json)
+ConditionPathExists=/storage/.config/babua/tailscale/tailscaled
+
+[Service]
+ExecStartPre=/bin/mkdir -p /run/tailscale /storage/.cache/tailscale
+ExecStart=/storage/.config/babua/tailscale/tailscaled --statedir=/storage/.cache/tailscale --socket=/run/tailscale/tailscaled.sock --port=41641
+# Joining the tailnet (tailscale up) is done by health.py / `babua tailscale-up`,
+# never here, so a slow login can't hold up boot.
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

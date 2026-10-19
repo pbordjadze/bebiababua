@@ -10,23 +10,22 @@ don't need the visit either; they can be added later from home with
 1. **Get the code:** `git pull` the `claude/grandparents-iptv-pi-kg0s2z`
    branch, then run `tools/babua init`.
 2. **Fill in `site/secrets.env`:**
-   - `WG_ENDPOINT`, `WG_SERVER_PUBLIC_KEY` (and adjust `WG_ADDRESS` /
-     `WG_ALLOWED_IPS` / `BABUA_HOST` if 10.66.66.x clashes with your setup)
+   - `TAILSCALE_AUTHKEY`: optional. A one-off, pre-approved key from
+     the Tailscale admin console (Settings → Keys) makes the box join your
+     tailnet by itself. Without it, you join on site (step 7).
    - `NTFY_URL`, `NTFY_TOKEN`; `HEARTBEAT_URL` if you have one ready
    - `WIFI_SSID` / `WIFI_PSK` **only if there's no Ethernet near the TV**.
      You need their Wi-Fi password for that.
    - Leave `IPTV_M3U_URL` empty. Test channel 99 gives you a picture.
 3. **Add a backup SSH key** (e.g. your phone's) to `site/authorized_keys`.
-4. **Add the `[Peer]` block** that `init` printed to your homelab WireGuard
-   server.
-5. **Build:** `tools/babua check`, then `tools/babua image`. This needs Linux
+4. **Build:** `tools/babua check`, then `tools/babua image`. This needs Linux
    or Docker and produces `build/out/babua-tv-LibreELEC-12.2.1.img.gz`.
-6. **Flash two SD cards** (4 GB or more each) with Raspberry Pi Imager:
+5. **Flash two SD cards** (4 GB or more each) with Raspberry Pi Imager:
    *Choose Device* → Raspberry Pi 3, *Choose OS* → **Use Custom** → pick the
    `.img.gz`, *Choose Storage* → the card. When it asks about OS
    customisation, say **No**. Label the second card "TV spare".
-7. **Delete** `build/out/*.img.gz` (it contains your secrets).
-8. **Pack:** both cards, the official Pi power supply (5.1 V 2.5 A), a long
+6. **Delete** `build/out/*.img.gz` (it contains your secrets).
+7. **Pack:** both cards, the official Pi power supply (5.1 V 2.5 A), a long
    enough Ethernet cable, an HDMI cable, a small bag or envelope for their
    old SD card, and your laptop with the repo and `site/`. Bring a card
    reader if you have one, in case you need to reflash on site.
@@ -51,10 +50,12 @@ don't need the visit either; they can be added later from home with
 6. **Laptop on their Wi-Fi:** run
    `BABUA_HOST=babua-tv.local tools/babua status`. If `.local` doesn't
    resolve, use the Pi's IP from the router's DHCP list.
-7. **The must-have:** `tools/babua status` with no `BABUA_HOST` works over
-   the VPN. If it doesn't, fix it now (`BABUA_HOST=babua-tv.local tools/babua
-   logs babua-vpn`) while you still have LAN access. Everything else can be
-   fixed from home; this can't.
+7. **The must-have: remote access.** If the key wasn't baked in, run
+   `babua tailscale-up tskey-auth-...` on the box (generate the key in the
+   Tailscale app or admin console). Then, in the admin console, open the
+   machine → **Disable key expiry**; otherwise it drops off after 180 days.
+   Test: turn your phone's Wi-Fi off and SSH to `babua-tv` over cellular with
+   Tailscale on. Everything else can be fixed from home; this can't.
 8. **Test picture:** `tools/babua play 99`. Then test with *her* remote:
    - up/down changes channel, OK opens the list, BACK closes it
    - check whether CH+/− and the number keys do anything (note the result)

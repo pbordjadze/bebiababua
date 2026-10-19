@@ -2,14 +2,14 @@
 
 A Raspberry Pi 3 behind their Samsung TV that plays their Georgian and Russian
 IPTV channels with no time limits. To them it's just the TV. To me it's a
-LibreELEC appliance I can manage completely from home over WireGuard.
+LibreELEC appliance I can manage completely from home over Tailscale.
 
 **What grandma does:** turns on the TV with her usual Samsung remote. The last
 channel she watched starts playing. Up/down changes channel. OK shows the
 channel list. Turning the TV off stops the stream. If something goes wrong, any
 button brings the picture back.
 
-**What I get:** SSH over WireGuard, ntfy alerts when something breaks (and
+**What I get:** SSH over Tailscale, ntfy alerts when something breaks (and
 again when it recovers), a heartbeat so I hear about it if the box goes
 silent, remote screenshots and remote button presses, config-as-code deployed
 with one command, and a flashable image I can rebuild at any time.
@@ -19,7 +19,7 @@ with one command, and a flashable image I can rebuild at any time.
                           │  IPTV Simple ◄── local playlist ◄── babua playlist.py ◄── provider M3U
                           │  babuad      (TV off → stop/blank, TV on/any key → resume, retries)
                           │  health      (5 min: net, VPN, Kodi, power, playlist → ntfy + heartbeat)
-                          └─ WireGuard (outbound, split tunnel) ──► homelab: SSH, ntfy, uptime monitor
+                          └─ Tailscale (outbound only) ──► my tailnet: SSH, ntfy, uptime monitor
 ```
 
 ## Why this design
@@ -30,7 +30,7 @@ with one command, and a flashable image I can rebuild at any time.
 | Raspberry Pi OS + Kodi | More flexible, but the SD card is writable everywhere (power-cut risk), there's more to patch, and Kodi packaging for the Pi 3 is second-class. |
 | Another app on the Samsung (Tizen) | Can't be remote-administered. That's the same trap as the current app. |
 | Through Jellyfin | Only worth it if the provider sends HEVC-only streams (the Pi 3 can't decode HEVC). Then Jellyfin would transcode to H.264 at the cost of homelab upload bandwidth. `tools/babua codecs` tells you whether that's needed. Direct playback is the default. |
-| Tailscale instead of WireGuard | The LibreELEC 12 add-on repo has no Tailscale add-on. WireGuard is built in and dials out, so grandma's router needs no changes. |
+| Remote access: Tailscale | LibreELEC has no Tailscale add-on, so the image ships Tailscale's official static ARM build (pinned and checksummed) as a systemd unit. Outbound only, so grandma's router needs no changes; DNS and firewall stay with LibreELEC. Plain WireGuard (built into LibreELEC) is supported as an alternative. |
 
 Kodi has no Georgian UI translation, so the UI is Russian (Russian is fully
 translated). Channel names can be Georgian. Kodi's default font has no
@@ -44,9 +44,8 @@ machine isn't Linux.
 
 ```sh
 tools/babua init                 # creates site/ (git-ignored): WG keys, SSH host key, Kodi password
-$EDITOR site/secrets.env         # provider URL, VPN endpoint, ntfy, heartbeat
+$EDITOR site/secrets.env         # Tailscale auth key, provider URL, ntfy, heartbeat
 $EDITOR site/authorized_keys     # your SSH public key(s); add a backup key too
-# add the printed [Peer] to your WireGuard server (docs/HOMELAB.md)
 
 tools/babua list-source provider -g rustavi   # find the provider's exact channel names
 $EDITOR config/channels.toml                  # grandma's channels, in her order
@@ -101,8 +100,8 @@ More situations and their fixes are in [docs/RUNBOOK.md](docs/RUNBOOK.md).
     renamed list. It runs at boot and then every 6 h. If the provider is down
     it keeps the last good copy; if a channel disappears upstream, that channel
     keeps its old URL. There's also a daily stream probe.
-  - `health.py` runs every 5 minutes. It checks the internet, the WireGuard
-    handshake (reconnecting if needed), Kodi (restarted if hung for 15 min),
+  - `health.py` runs every 5 minutes. It checks the internet, Tailscale
+    (joining or restarting it if needed, and warning before its key expires), Kodi (restarted if hung for 15 min),
     under-voltage, temperature, disk, memory and the playlist. It sends ntfy
     alerts only on problem/recovery transitions and queues them while offline.
     It also pings the heartbeat URL.

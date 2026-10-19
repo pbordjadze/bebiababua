@@ -87,16 +87,16 @@ def main():
     address = get_value(text, "WG_ADDRESS").split("/")[0] or "10.66.66.20"
     print(f"""
 Next steps
-  1. Fill in site/secrets.env (IPTV_M3U_URL, WG_ENDPOINT, WG_SERVER_PUBLIC_KEY, NTFY_*, ...).
-  2. Add this peer to your homelab WireGuard server:
+  1. Fill in site/secrets.env: TAILSCALE_AUTHKEY (or join on site with
+     `babua tailscale-up <key>`), NTFY_*, HEARTBEAT_URL, IPTV_M3U_URL.
+  2. tools/babua check && tools/babua preview && tools/babua image
 
+Only if you use your own WireGuard server instead of Tailscale, add this peer:
      [Peer]
      # babua-tv (grandparents)
      PublicKey = {wg_pub}
      PresharedKey = {get_value(text, 'WG_PRESHARED_KEY')}
      AllowedIPs = {address}/32
-
-  3. tools/babua check && tools/babua preview && tools/babua image
 """)
     return 0
 

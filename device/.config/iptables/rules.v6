@@ -8,6 +8,8 @@
 -A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 -A INPUT -p ipv6-icmp -j ACCEPT
 -A INPUT -i wg+ -m conntrack --ctstate NEW -j ACCEPT
+-A INPUT -i tailscale+ -m conntrack --ctstate NEW -j ACCEPT
+-A INPUT -p udp --dport 41641 -j ACCEPT
 -A INPUT -j private-subnets
 -A private-subnets -s fc00::/7 -i eth+ -m conntrack --ctstate NEW -j ACCEPT
 -A private-subnets -s fc00::/7 -i wl+ -m conntrack --ctstate NEW -j ACCEPT

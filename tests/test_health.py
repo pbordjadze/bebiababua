@@ -49,6 +49,29 @@ class HealthTest(unittest.TestCase):
         sent = self.run_once(internet=(False, "no route"), vpn=(False, "down"), playlist=(False, "stale"))
         self.assertEqual(sent, ["Problem: internet"])
 
+    def test_tailscale(self):
+        running = {"BackendState": "Running",
+                   "Self": {"DNSName": "babua-tv.tail1234.ts.net.", "TailscaleIPs": ["100.64.1.2"],
+                            "KeyExpiry": "2099-01-01T00:00:00Z"}}
+        with mock.patch.object(B, "tailscale_status", return_value=running):
+            ok, detail = H.check_tailscale({}, repair=True)
+        self.assertTrue(ok)
+        self.assertIn("babua-tv.tail1234.ts.net 100.64.1.2", detail)
+
+        soon = {"BackendState": "Running", "Self": {"KeyExpiry": "2000-01-01T00:00:00Z"}}
+        with mock.patch.object(B, "tailscale_status", return_value=soon):
+            ok, detail = H.check_tailscale({}, repair=True)
+        self.assertFalse(ok)
+        self.assertIn("key expiry", detail)
+
+        with mock.patch.object(B, "tailscale_status", return_value={"BackendState": "NeedsLogin"}), \
+                mock.patch.object(B, "tailscale_up", return_value=(0, "")) as up:
+            ok, detail = H.check_tailscale({"TAILSCALE_AUTHKEY": "tskey-x"}, repair=True)
+            self.assertFalse(ok)
+            up.assert_called_once()
+            H.check_tailscale({}, repair=True)            # no key: nothing to do
+            self.assertEqual(up.call_count, 1)
+
     def test_throttle_flags(self):
         with mock.patch.object(B, "run", return_value=(0, "throttled=0x50000")):
             ok, detail = H.check_power({})

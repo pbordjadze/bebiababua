@@ -51,7 +51,42 @@ def wg_handshake_age():
     return time.time() - max(stamps)
 
 
+def check_tailscale(cfg, repair):
+    st = B.tailscale_status()
+    if st is None:
+        if repair:
+            B.run(["systemctl", "restart", "babua-tailscale"], timeout=60)
+            return False, "tailscaled not answering; restarted it"
+        return False, "tailscaled not answering"
+    state = st.get("BackendState")
+    if state == "NeedsLogin":
+        key = cfg.get("TAILSCALE_AUTHKEY")
+        if not key:
+            return False, "not logged in - run `babua tailscale-up <authkey>`"
+        if repair:
+            rc, out = B.tailscale_up(cfg, key)
+            return False, "joining the tailnet" if rc == 0 else f"tailscale up failed: {out[-150:]}"
+        return False, "not logged in yet"
+    if state != "Running":
+        return False, f"tailscale state {state}"
+    me = st.get("Self") or {}
+    expiry = me.get("KeyExpiry")
+    if expiry:
+        try:
+            left = time.mktime(time.strptime(expiry[:19], "%Y-%m-%dT%H:%M:%S")) - time.mktime(time.gmtime())
+        except ValueError:
+            left = None
+        if left is not None and left < 14 * 86400:
+            return False, f"node key expires {expiry[:10]} - disable key expiry for this machine in the Tailscale admin console"
+    ips = ", ".join(me.get("TailscaleIPs") or [])
+    return True, f"{me.get('DNSName', '').rstrip('.') or 'connected'} {ips}"
+
+
 def check_vpn(cfg, repair):
+    if B.tailscale_installed():
+        ok, detail = check_tailscale(cfg, repair)
+        if not cfg.get("WG_ENDPOINT") or not ok:
+            return ok, detail
     if not cfg.get("WG_ENDPOINT"):
         return True, "not configured"
     age = wg_handshake_age()

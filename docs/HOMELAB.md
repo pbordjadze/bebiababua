@@ -1,48 +1,34 @@
 # Homelab side
 
-The box only makes outbound connections: WireGuard to your server, HTTPS to
-ntfy and the heartbeat. Nothing needs to change on grandma's router.
+The box only makes outbound connections: Tailscale, HTTPS to ntfy and the
+heartbeat. Nothing needs to change on grandma's router.
 
-## WireGuard
+## Tailscale (remote access)
 
-`tools/babua init` prints a `[Peer]` block. Add it to whatever runs your
-WireGuard server (wg-quick, wg-easy, OPNsense, UniFi, ...). With plain
-wg-quick it looks like this:
+The image includes Tailscale's static ARM build, which runs as
+`babua-tailscale.service`. To join it to your tailnet:
 
-```ini
-# /etc/wireguard/wg0.conf on the homelab server
-[Interface]
-Address = 10.66.66.1/24
-ListenPort = 51820
-PrivateKey = <server private key>
+1. Admin console → Settings → Keys → **Generate auth key**: one-off
+   (not reusable), not ephemeral, pre-approved if you use device approval.
+2. Put the key in `site/secrets.env` as `TAILSCALE_AUTHKEY` before building
+   (the box joins ~3 min after first boot), or run
+   `babua tailscale-up <key>` on the box.
+3. In the admin console, open the machine `babua-tv` → **Disable key expiry**.
+   The health check warns you 14 days before expiry if you forget.
 
-[Peer]
-# babua-tv (grandparents)
-PublicKey = <printed by babua init>
-PresharedKey = <printed by babua init>
-AllowedIPs = 10.66.66.20/32
-```
+It runs with `--accept-dns=false --netfilter-mode=off`, so grandma's DNS and
+the LibreELEC firewall stay as they are; the firewall accepts anything
+arriving over `tailscale0`. From your devices: `ssh root@babua-tv`
+(MagicDNS), and `tools/babua` uses `BABUA_HOST=babua-tv`. Tailnet ACLs can
+restrict who may reach it.
 
-Then fill in `site/secrets.env`:
+## WireGuard (alternative)
 
-```sh
-WG_ENDPOINT=vpn.example.org          # public DNS name/IP of the server (port-forward UDP 51820)
-WG_SERVER_PUBLIC_KEY=<server public key>
-WG_ADDRESS=10.66.66.20/24
-WG_ALLOWED_IPS=10.66.66.0/24         # add e.g. ,192.168.10.0/24 to reach ntfy/Kuma on your LAN
-BABUA_HOST=10.66.66.20
-```
-
-Notes:
-
-- The box sends a keepalive every 25 s, so it stays reachable behind
-  CGNAT. Your homelab end needs a reachable UDP port. If your home is behind
-  CGNAT as well, use a small VPS as the WireGuard hub.
-- If your endpoint is a dynamic-DNS name, that's fine: connman re-resolves
-  it, and the health check reconnects when the handshake goes stale (more
-  than 5 min).
-- Restrict what the peer may reach on your side with the firewall, e.g.
-  only ntfy and the heartbeat monitor. The box doesn't need anything else.
+Only if you'd rather use your own WireGuard server. `tools/babua init` prints
+a `[Peer]` block for your server; then set `WG_ENDPOINT`,
+`WG_SERVER_PUBLIC_KEY`, `WG_ADDRESS`, `WG_ALLOWED_IPS` and `BABUA_HOST` in
+`site/secrets.env`, or run `babua vpn-setup HOST[:PORT] SERVER_PUBKEY` on the box.
+Keep `WG_ALLOWED_IPS` to homelab networks only (split tunnel).
 
 ## ntfy
 
