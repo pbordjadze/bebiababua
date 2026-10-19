@@ -164,3 +164,47 @@ group = "Русские"
 name = "Русский роман"
 match = ["Русский роман", "Русский роман HD"]
 group = "Русские"
+
+# ------------------------------------------------------- American (grandpa)
+# New York broadcast feeds run on US Eastern time (8-9 h behind Tbilisi).
+# Deliberately no Fox News. MSNBC / MS NOW is not in the provider's playlist.
+[[channel]]
+name = "CNN"
+match = ["CNN US", "CNN HD CA", "CNN International Europe HD"]
+group = "American"
+
+[[channel]]
+name = "ABC"
+match = ["ABC HD US"]
+group = "American"
+
+[[channel]]
+name = "NBC"
+match = ["NBC New York HD US"]
+group = "American"
+
+[[channel]]
+name = "CBS"
+match = ["CBS New York HD US"]
+group = "American"
+
+[[channel]]
+name = "PBS"
+match = ["Thirteen HD US", "New Jersey PBS HD US"]
+group = "American"
+
+# ---------------------------------------------------------------- Fighting
+[[channel]]
+name = "UFC"
+match = ["UFC Fight HD"]
+group = "Sport"
+
+[[channel]]
+name = "Матч! Боец"
+match = ["Матч! Боец HD", "Матч! Боец"]
+group = "Sport"
+
+[[channel]]
+name = "Setanta Sports"
+match = ["Setanta Sports 1 HD GE"]
+group = "Sport"
