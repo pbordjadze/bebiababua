@@ -27,6 +27,7 @@ STABLE_AFTER = 60              # a stream that played this long counts as health
 VERIFY_AFTER = 20              # a retry that shows no picture by then has failed
 TV_POLL = 10                   # seconds between CEC power-status polls of the TV
 TV_OFF_AFTER = 3               # unanswered polls in a row that count as "TV off"
+TV_ON_SETTLE = 5               # after claiming the input, let Kodi's own wake-up resume first
 
 
 class Daemon:
@@ -172,6 +173,10 @@ class Daemon:
                 return
             self.give_up()
             return
+        if kind == "tv_on":
+            self.retries = 0
+            self.play_last("TV turned on")
+            return
         if kind == "resume":
             self.retries = 0
             self.play_last("message finished")
@@ -201,9 +206,11 @@ class Daemon:
             return
         if self.tv_was_off:
             B.log("TV turned on: switching it to our input")
-            if B.claim_tv_input() and B.cfg_bool(self.cfg, "RESUME_ON_WAKE", True) and not self.playing():
-                self.retries = 0
-                self.play_last("TV turned on")
+            if B.claim_tv_input() and B.cfg_bool(self.cfg, "RESUME_ON_WAKE", True) and not self.pending:
+                # The switch usually wakes Kodi, which resumes by itself
+                # (OnScreensaverDeactivated); opening a channel at the same
+                # moment makes Kodi abort one and show an error dialog.
+                self.pending = (time.monotonic() + TV_ON_SETTLE, "tv_on", None)
         self.tv_was_off = False
 
     def give_up(self):

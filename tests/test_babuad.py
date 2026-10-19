@@ -218,11 +218,24 @@ class BabuadTest(unittest.TestCase):
             B.claim_tv_input.assert_not_called()
             d.watch_tv()                                   # standby
             d.watch_tv()                                   # waking up
-            d.watch_tv()                                   # on -> claim and play
+            d.watch_tv()                                   # on -> claim, then play if Kodi didn't
             B.claim_tv_input.assert_called_once()
+            self.assertEqual(d.pending[1], "tv_on")
+            d.on_pending("tv_on")
             self.assertTrue(wait_for(lambda: self.kodi.playing == 12))
             d.watch_tv()                                   # still on: no second claim
             B.claim_tv_input.assert_called_once()
+
+    def test_tv_on_after_kodi_resumed_by_itself_opens_once(self):
+        self.start()
+        self.daemon.tv_was_off = True
+        with mock.patch.object(B, "tv_power", return_value="on"), \
+                mock.patch.object(babuad, "TV_ON_SETTLE", 0.3):
+            self.daemon.next_tv_poll = 0.0               # poll now
+            self.kodi.emit("GUI.OnScreensaverDeactivated", {})   # the switch woke Kodi
+            self.assertTrue(wait_for(lambda: B.claim_tv_input.called))
+            threading.Event().wait(0.8)                  # past TV_ON_SETTLE
+        self.assertEqual(self.kodi.opened(), [12])       # one open, not two
 
     def test_tv_silent_in_standby_then_on_claims_input(self):
         d = babuad.Daemon()
