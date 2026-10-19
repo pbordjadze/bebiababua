@@ -7,6 +7,7 @@ the box is unattended, so a crash means a visit.
 
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -327,6 +328,35 @@ def kodi_settings(cfg):
         "debug.screenshotpath": SCREENSHOT_DIR + "/",
     }
     return settings
+
+
+# HDMI-CEC from outside Kodi, through the kernel's cec-ctl (it works next to
+# Kodi's libcec on the same adapter).
+
+
+def cec_ctl(*args, timeout=5):
+    try:
+        res = subprocess.run(["cec-ctl", "-d0", *args], capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return res.stdout
+
+
+def tv_power():
+    """The TV's power state: "on", "standby", "to-on", "to-standby", or None
+    when it doesn't answer (some TVs don't while in standby)."""
+    m = re.search(r"pwr-state:\s*([a-z-]+)", cec_ctl("--to", "0", "--give-device-power-status") or "")
+    return m.group(1) if m else None
+
+
+def claim_tv_input():
+    """Switch the TV to our HDMI input, as its own remote's source button would."""
+    m = re.search(r"Physical Address\s*:\s*([0-9a-f.]+)", cec_ctl() or "")
+    if not m or m.group(1) == "f.f.f.f":   # no HDMI link (TV unplugged?)
+        return False
+    cec_ctl("--to", "0", "--image-view-on")
+    cec_ctl("--active-source", f"phys-addr={m.group(1)}")
+    return True
 
 
 # CEC behaviour (peripheral_data/cec_*.xml, only read at Kodi start).

@@ -5,6 +5,8 @@
   the settings in babua_lib.kodi_settings()
 * TV switched off (CEC) -> Kodi stops playback -> we blank the screen
 * TV switched on / any remote key -> screensaver ends -> last channel plays
+* TV switched on (seen by polling it over CEC) -> switch it to our input, once:
+  someone who then picks another input on purpose stays there
 * a stream that dies is retried a few times before giving up
 * playlist reloads are only done while nothing is playing
 * after a clip sent with `babua show`, the channel comes back by itself
@@ -23,6 +25,8 @@ RETRY_DELAYS = (3, 10, 30)     # seconds before each retry of a dead stream
 STOP_SETTLE = 3                # seconds to wait after a stop before acting
 STABLE_AFTER = 60              # a stream that played this long counts as healthy
 VERIFY_AFTER = 20              # a retry that shows no picture by then has failed
+TV_POLL = 10                   # seconds between CEC power-status polls of the TV
+TV_OFF_AFTER = 3               # unanswered polls in a row that count as "TV off"
 
 
 class Daemon:
@@ -35,6 +39,9 @@ class Daemon:
         self.pending = None        # (due_monotonic, kind, data)
         self.quiet_until = 0.0
         self.state = B.read_json(PLAYER_STATE)
+        self.tv_was_off = None     # None until the first answer: never grab the input at start
+        self.tv_silent = 0
+        self.next_tv_poll = 0.0
 
     # ------------------------------------------------------------------ util
     def save_state(self):
@@ -180,6 +187,25 @@ class Daemon:
         self.maybe_reload_playlist()
         self.blank()
 
+    def watch_tv(self):
+        """Switch the TV to the Pi when it goes from off to on."""
+        power = B.tv_power()
+        if power is None:
+            self.tv_silent += 1
+            if self.tv_silent >= TV_OFF_AFTER:
+                self.tv_was_off = True
+            return
+        self.tv_silent = 0
+        if power != "on":
+            self.tv_was_off = True
+            return
+        if self.tv_was_off:
+            B.log("TV turned on: switching it to our input")
+            if B.claim_tv_input() and B.cfg_bool(self.cfg, "RESUME_ON_WAKE", True) and not self.playing():
+                self.retries = 0
+                self.play_last("TV turned on")
+        self.tv_was_off = False
+
     def give_up(self):
         name = str(self.current_channel)
         try:
@@ -216,10 +242,13 @@ class Daemon:
             self.blank()
 
         last_housekeeping = 0.0
+        watch_tv = B.cfg_bool(self.cfg, "CLAIM_TV_INPUT", True)
         while True:
             timeout = 30.0
             if self.pending:
                 timeout = max(0.1, self.pending[0] - time.monotonic())
+            if watch_tv:
+                timeout = min(timeout, max(0.1, self.next_tv_poll - time.monotonic()))
             try:
                 msg = self.kodi.read_notification(timeout)
             except socket.timeout:
@@ -230,6 +259,9 @@ class Daemon:
                 _, kind, _ = self.pending
                 self.pending = None
                 self.on_pending(kind)
+            if watch_tv and time.monotonic() >= self.next_tv_poll:
+                self.next_tv_poll = time.monotonic() + TV_POLL
+                self.watch_tv()
             if time.monotonic() - last_housekeeping > 60:
                 last_housekeeping = time.monotonic()
                 self.maybe_reload_playlist()

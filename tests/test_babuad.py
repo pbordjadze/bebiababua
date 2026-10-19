@@ -149,6 +149,8 @@ class BabuadTest(unittest.TestCase):
             mock.patch.object(babuad, "VERIFY_AFTER", 0.5),
             mock.patch.object(babuad.time, "sleep", lambda s: None),
             mock.patch.object(B, "notify"),
+            mock.patch.object(B, "tv_power", return_value=None),
+            mock.patch.object(B, "claim_tv_input", return_value=True),
         ]
         for p in patches:
             p.start()
@@ -205,6 +207,35 @@ class BabuadTest(unittest.TestCase):
         self.kodi.broken.clear()
         self.kodi.handle("Player.Open", {"item": {"channelid": 12}})
         self.assertTrue(wait_for(lambda: "failure" not in B.read_json(os.path.join(B.STATE_DIR, "player.json"))))
+
+    def test_tv_power_on_claims_input_once(self):
+        d = babuad.Daemon()
+        d.kodi = B.Kodi().connect()
+        self.addCleanup(d.kodi.close)
+        states = iter(["on", "standby", "to-on", "on", "on"])
+        with mock.patch.object(B, "tv_power", side_effect=lambda: next(states)):
+            d.watch_tv()                                   # already on at start: leave it
+            B.claim_tv_input.assert_not_called()
+            d.watch_tv()                                   # standby
+            d.watch_tv()                                   # waking up
+            d.watch_tv()                                   # on -> claim and play
+            B.claim_tv_input.assert_called_once()
+            self.assertTrue(wait_for(lambda: self.kodi.playing == 12))
+            d.watch_tv()                                   # still on: no second claim
+            B.claim_tv_input.assert_called_once()
+
+    def test_tv_silent_in_standby_then_on_claims_input(self):
+        d = babuad.Daemon()
+        d.kodi = B.Kodi().connect()
+        self.addCleanup(d.kodi.close)
+        states = iter(["on", None, None, "on", None, None, None, "on"])
+        with mock.patch.object(B, "tv_power", side_effect=lambda: next(states)):
+            for _ in range(4):
+                d.watch_tv()                               # one lost reply is not "off"
+            B.claim_tv_input.assert_not_called()
+            for _ in range(4):
+                d.watch_tv()                               # 3 unanswered polls = off
+            B.claim_tv_input.assert_called_once()
 
     def test_wake_with_nothing_played_picks_most_recent(self):
         self.start()
