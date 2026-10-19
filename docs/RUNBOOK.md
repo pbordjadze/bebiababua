@@ -18,6 +18,9 @@ shell on the box, where the same tools are on the PATH as `babua ...`.
 | Picture stutters | Weak network, HEVC stream, or under-voltage | `tools/babua health` (power), `tools/babua codecs`; Wi-Fi under load: `tools/babua ssh 'ping -c 40 -i 0.5 <their router>'` while a channel plays (loss = Wi-Fi, see `iw dev wlan0 link`) |
 | Kodi menus in English / wrong look | Someone changed settings | `tools/babua restart-kodi` (prekodi + babuad put them back) |
 | Box unreachable | Power, internet or VPN | Check the heartbeat monitor; ask them to unplug the Pi and plug it back in; last resort: swap in the spare SD card |
+| TV on, but showing its own tuner/app, not the Pi | TV powered on into another input | Automatic since babuad's CEC watch (`TV turned on: switching it to our input` in `logs babuad`). By hand: `tools/babua ssh 'cec-ctl -d0 --to 0 --image-view-on; cec-ctl -d0 --active-source phys-addr=1.0.0.0'` (the Pi's address: `cec-ctl -d0 \| grep Physical`) |
+| A Kodi dialog over the picture | e.g. "Воспроизведение плейлиста прервано" after two channel opens at once | `tools/babua screenshot` to read it; `tools/babua key select` presses its OK |
+| babuad log: `JSONRPC.Ping: ... Method not found` | Kodi's start-up is blocked on a modal dialog (it opens the start window before loading its JSON-RPC methods; the TCP server already answers) | `tools/babua screenshot`; `tools/babua key select`. kodi.log lacks `JSONRPC v13.5.0: Successfully initialized` until then. The "no PVR add-on" case is prevented by prekodi. |
 | Kodi in red/maroon "safe mode" | Kodi crashed repeatedly at start | `tools/babua kodi-log`, fix the cause, then `tools/babua restart-kodi` |
 
 ## Changing things

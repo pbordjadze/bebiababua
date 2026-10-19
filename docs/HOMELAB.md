@@ -97,3 +97,39 @@ haven't tested these URL parameters against a live server. If they don't
 work, download the file and use `babua show file.mp4`, which transcodes
 locally. The API key ends up in Kodi's log on the box, so use a key that
 does nothing else.
+
+## Debugging from lenovo-homelab
+
+The homelab (`~/projects/bebiababua`, this branch) can reach the box for
+diagnosis without the `site/` secrets:
+
+- `ssh babua-tv`: its own key `~/.ssh/babua_tv_ed25519`, host key pinned in
+  `~/.ssh/babua_tv_known_hosts` (`~/.ssh/babua_tv.conf`). The key's public half
+  must be in `site/authorized_keys`, or the next `deploy` drops it.
+- `babua-tv status | logs [unit] | screenshot | play N | key ... | ssh ...`:
+  `tools/babua` with `BABUA_SITE=~/.config/babua-site` (only the box's public
+  host key). `deploy` and `image` refuse there; changed files were copied by
+  hand (`cat file | ssh babua-tv 'cat > /storage/...'`), then committed.
+- Non-interactive SSH has no `/storage/.config/babua/bin` on PATH: use
+  `export PATH=$PATH:/storage/.config/babua/bin` first, or full paths.
+- Never print `/storage/.config/babua/secrets.env` or the playlist URLs
+  (provider credentials).
+- They are using the TV: restart babuad freely (playback continues), but not
+  Kodi, iwd or the box while something plays. Network-touching changes go
+  through a detached `systemd-run` script with a watchdog that reverts if the
+  router stops answering, because SSH drops with the network.
+- `pkill -f PATTERN` over SSH also matches the remote shell running it and
+  ends the session.
+
+Useful checks:
+
+```sh
+babua-tv ssh 'iw dev wlan0 link; iw dev wlan0 station dump | grep -E "tx failed|signal"'
+babua-tv ssh 'ping -c 40 -i 0.5 <their router> | tail -2'    # their router; loss = Wi-Fi
+babua-tv ssh 'cec-ctl -d0 --to 0 --give-device-power-status; cec-ctl -d0 --to 0 --request-active-source'
+babua-tv ssh 'grep -E "stalled|timeout waiting|demuxer|JSONRPC" /storage/.kodi/temp/kodi.log | tail'
+```
+
+Their network (2026-10): Eero mesh, router <their router>, the box
+at <the box's LAN address>. The Pi is held to 2.4 GHz (`device/.config/iwd/main.conf`);
+its 5 GHz link to the Eero collapsed under streaming load.
