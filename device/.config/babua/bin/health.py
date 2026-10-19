@@ -187,6 +187,42 @@ def check_player(cfg):
     return True, "ok"
 
 
+# Kodi dialogs that only appear when something went wrong (e.g. "playlist
+# playback aborted"), by Window.IsActive() name. Not the channel list or the
+# volume/seek bars grandma uses.
+MESSAGE_DIALOGS = ("okdialog", "yesnodialog", "textviewer", "progressdialog")
+
+
+def screen_dialog():
+    """Text of a message dialog on screen, "" for one without text, None if none."""
+    def probe(k):
+        active = k.call("XBMC.GetInfoBooleans", {"booleans": [f"Window.IsActive({d})" for d in MESSAGE_DIALOGS]})
+        names = [d for d in MESSAGE_DIALOGS if active.get(f"Window.IsActive({d})")]
+        if not names:
+            return None
+        # with no window given, Control.GetLabel reads the topmost modal dialog:
+        # 1 = heading, 9 = text (Estuary's DialogConfirm.xml)
+        labels = k.call("XBMC.GetInfoLabels", {"labels": ["Control.GetLabel(1)", "Control.GetLabel(9)"]})
+        text = " / ".join(v.strip() for v in (labels.get("Control.GetLabel(1)", ""),
+                                              labels.get("Control.GetLabel(9)", "")) if v and v.strip())
+        return text or names[0]
+    return B.kodi_try(probe)
+
+
+def check_screen(cfg, state):
+    """A message dialog left on the TV: reported once it has stayed for a whole
+    run (5-10 min), so one someone dismisses doesn't count."""
+    text = screen_dialog()
+    if text is None:
+        state.pop("dialog_runs", None)
+        return True, "no dialog"
+    runs = state.get("dialog_runs", 0) + 1
+    state["dialog_runs"] = runs
+    if runs < 2:
+        return True, f"dialog just appeared: {text}"[:300]
+    return False, f"dialog on screen: {text}"[:300]
+
+
 def heartbeat(cfg, problems):
     url = cfg.get("HEARTBEAT_URL")
     if not url:
@@ -225,6 +261,7 @@ def main():
         "memory": lambda: check_memory(cfg, repair),
         "playlist": lambda: check_playlist(cfg),
         "playback": lambda: check_player(cfg),
+        "screen": lambda: check_screen(cfg, state),
     }
     results = {}
     for name, fn in checks.items():

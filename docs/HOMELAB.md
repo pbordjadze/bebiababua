@@ -45,8 +45,9 @@ from the internet. If ntfy is only reachable through the VPN, alerts about
 the VPN itself are queued on the box and arrive only after the tunnel is back.
 
 What you'll receive: `Booted`, `Problem: <check>` / `Recovered: <check>` for
-internet, vpn, kodi, power, temperature, storage, memory, playlist and
-playback, and `Channel down` when a stream fails 4 times in a row.
+internet, vpn, kodi, power, temperature, storage, memory, playlist,
+playback and screen (a Kodi error/confirm dialog left on the TV for 5-10 min,
+with its text), and `Channel down` when a stream fails 4 times in a row.
 
 ## Heartbeat (finding out the box is offline)
 

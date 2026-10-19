@@ -15,7 +15,7 @@ class HealthTest(unittest.TestCase):
 
     def run_once(self, **results):
         defaults = dict(internet=OK, vpn=OK, kodi=OK, power=OK, temp=OK,
-                        storage=OK, memory=OK, playlist=OK, player=OK)
+                        storage=OK, memory=OK, playlist=OK, player=OK, screen=OK)
         defaults.update(results)
         sent = []
         with mock.patch.multiple(
@@ -29,6 +29,7 @@ class HealthTest(unittest.TestCase):
             check_memory=lambda cfg, repair: defaults["memory"],
             check_playlist=lambda cfg: defaults["playlist"],
             check_player=lambda cfg: defaults["player"],
+            check_screen=lambda cfg, state: defaults["screen"],
             heartbeat=lambda cfg, problems: None,
             boot_id=lambda: "boot-1",
         ), mock.patch.object(B, "notify", lambda cfg, title, msg, *a: sent.append(title)), \
@@ -43,6 +44,26 @@ class HealthTest(unittest.TestCase):
         self.assertEqual(self.run_once(power=bad), ["Problem: power"])
         self.assertEqual(self.run_once(power=bad), [])            # no repeat while it persists
         self.assertEqual(self.run_once(), ["Recovered: power"])
+
+    def test_dialog_left_on_screen(self):
+        state = {}
+        with mock.patch.object(H, "screen_dialog", return_value="Playback aborted / file failed"):
+            self.assertTrue(H.check_screen({}, state)[0])          # just appeared: give it a run
+            ok, detail = H.check_screen({}, state)
+            self.assertFalse(ok)
+            self.assertIn("Playback aborted", detail)
+        with mock.patch.object(H, "screen_dialog", return_value=None):
+            self.assertTrue(H.check_screen({}, state)[0])
+            self.assertNotIn("dialog_runs", state)
+
+    def test_screen_dialog_reads_heading_and_text(self):
+        class K:
+            def call(self, method, params=None):
+                if method == "XBMC.GetInfoBooleans":
+                    return {b: b == "Window.IsActive(okdialog)" for b in params["booleans"]}
+                return {"Control.GetLabel(1)": "Воспроизведение прервано", "Control.GetLabel(9)": "Не удалось"}
+        with mock.patch.object(B, "kodi_try", lambda fn, default=None: fn(K())):
+            self.assertEqual(H.screen_dialog(), "Воспроизведение прервано / Не удалось")
 
     def test_offline_suppresses_downstream_noise(self):
         self.run_once()
