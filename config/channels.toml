@@ -37,8 +37,10 @@ number = 99
 # url_env = "IPTV_BACKUP_M3U_URL"
 
 # ---------------------------------------------------------------- Georgian
-# The provider's channel names. "HD" variants are H.264; avoid "UHD"/"FHD"
+# The provider's channel names. Prefer "HD"/plain variants; avoid "UHD"/"FHD"/"4K"
 # (likely HEVC or too heavy for a Pi 3) - check with `tools/babua codecs`.
+# Easy additions: "Odishi HD GE", "Euronews Georgia HD GE", "Obiektivi TV GE",
+# "Marneuli TV GE", "Silk Universal HD GE".
 [[channel]]
 name = "პირველი არხი"
 match = ["1TV HD GE", "1TV GE"]
@@ -75,8 +77,18 @@ match = ["Maestro GE"]
 group = "ქართული"
 
 [[channel]]
+name = "GDS"
+match = ["GDS GE"]
+group = "ქართული"
+
+[[channel]]
 name = "აჭარა"
 match = ["Adjara TV GE"]
+group = "ქართული"
+
+[[channel]]
+name = "ერთსულოვნება"
+match = ["Ertsulovneba HD GE"]
 group = "ქართული"
 
 [[channel]]
@@ -84,8 +96,15 @@ name = "პალიტრა ნიუსი"
 match = ["Palitra News HD GE"]
 group = "ქართული"
 
+[[channel]]
+name = "კომედი არხი"
+match = ["Comedy Arxi GE"]
+group = "ქართული"
+
 # ----------------------------------------------------------------- Russian
-# Plain names are Moscow time (+0); the +N / city variants are regional feeds.
+# Plain names are the Moscow-time feeds; "+N"/city variants are regional.
+# Easy additions: "Россия 24", "Звезда", "СПАС", "Шансон ТВ", "Время",
+# "Советская киноклассика HD", "Настоящее время", "Дождь", "Кухня HD".
 [[channel]]
 name = "Первый канал"
 match = ["Первый канал"]
@@ -107,8 +126,8 @@ match = ["Россия К", "Россия К HD"]
 group = "Русские"
 
 [[channel]]
-name = "Россия 24"
-match = ["Россия 24", "Россия 24 HD"]
+name = "Мир"
+match = ["Мир"]
 group = "Русские"
 
 [[channel]]
@@ -117,13 +136,13 @@ match = ["ТВ Центр"]
 group = "Русские"
 
 [[channel]]
-name = "Звезда"
-match = ["Звезда", "Звезда HD"]
+name = "Пятый канал"
+match = ["Пятый канал"]
 group = "Русские"
 
 [[channel]]
-name = "Пятый канал"
-match = ["Пятый канал"]
+name = "Домашний"
+match = ["Домашний", "Домашний HD"]
 group = "Русские"
 
 [[channel]]
@@ -132,6 +151,16 @@ match = ["Дом Кино"]
 group = "Русские"
 
 [[channel]]
-name = "Мир"
-match = ["Мир"]
+name = "Мосфильм"
+match = ["Мосфильм. Золотая коллекция", "Мосфильм. Золотая коллекция HD"]
+group = "Русские"
+
+[[channel]]
+name = "Ностальгия"
+match = ["Ностальгия"]
+group = "Русские"
+
+[[channel]]
+name = "Русский роман"
+match = ["Русский роман", "Русский роман HD"]
 group = "Русские"
