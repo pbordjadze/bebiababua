@@ -135,7 +135,9 @@ babua-tv ssh 'grep -E "stalled|timeout waiting|demuxer|JSONRPC" /storage/.kodi/t
 Alerts: since 2026-10-19 the box's `NTFY_URL` is a private ntfy.sh topic (no
 token; the random topic name is the secret), kept on the homelab in
 `~/.config/secrets/babua-ntfy-url`. `babua-tv notify-test` sends a test.
-No `HEARTBEAT_URL` yet, so silence from the box isn't reported.
+Silence is covered from the homelab side: its `babua-heartbeat.timer` pings the
+box over Tailscale every 5 min and posts "Offline" to the same topic after
+~15 min without an answer (no `HEARTBEAT_URL` on the box).
 
 Their network (2026-10): Eero mesh, router <their router>, the box
 at <the box's LAN address>. The Pi is held to 2.4 GHz (`device/.config/iwd/main.conf`);
