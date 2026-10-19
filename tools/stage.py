@@ -84,13 +84,31 @@ def check(cfg, site_dir):
 
 
 def wifi_config(cfg):
-    return (
-        "[service_babua_wifi]\n"
-        "Type = wifi\n"
-        f"Name = {cfg['WIFI_SSID']}\n"
-        f"Passphrase = {cfg['WIFI_PSK']}\n"
-        "AutoConnect = true\n"
-    )
+    """connman provisioning file; a second (backup) network is optional."""
+    out = []
+    for n, prefix in ((1, "WIFI"), (2, "WIFI_BACKUP")):
+        if cfg.get(f"{prefix}_SSID"):
+            out.append(f"[service_babua_wifi{n}]\n"
+                       "Type = wifi\n"
+                       f"Name = {cfg[f'{prefix}_SSID']}\n"
+                       "Security = psk\n"
+                       f"Passphrase = {cfg[f'{prefix}_PSK']}\n")
+    return "\n".join(out)
+
+
+# connman's own state file. Only written into a fresh image: a fresh
+# LibreELEC may keep Wi-Fi powered off until its first-run wizard runs.
+CONNMAN_SETTINGS = """[global]
+OfflineMode=false
+
+[Wired]
+Enable=true
+Tethering=false
+
+[WiFi]
+Enable=true
+Tethering=false
+"""
 
 
 def put(root, rel, data, mode=0o644):
@@ -136,7 +154,10 @@ def stage(out, site_dir, first_boot=True):
     if cfg.get("WG_ENDPOINT"):
         put(out, ".config/wireguard/babua.config", B.wireguard_config(cfg), 0o600)
     if cfg.get("WIFI_SSID"):
-        put(out, ".cache/connman/babua-wifi.config", wifi_config(cfg), 0o600)
+        # connman ignores provisioning files whose name isn't letters/digits only
+        put(out, ".cache/connman/babuawifi.config", wifi_config(cfg), 0o600)
+        if first_boot:
+            put(out, ".cache/connman/settings", CONNMAN_SETTINGS)
 
     put(out, ".cache/hostname", cfg.get("HOSTNAME", "babua-tv") + "\n")
     put(out, ".cache/timezone", f"TIMEZONE={cfg.get('TIMEZONE', 'UTC')}\n")
