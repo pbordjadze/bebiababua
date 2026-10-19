@@ -64,6 +64,20 @@ class PrekodiTest(unittest.TestCase):
         self.assertEqual(cec["standby_pc_on_tv_standby"].get("value"), "36045")
         self.assertEqual(cec["cec_hdmi_port"].get("value"), "2")           # user value kept
 
+    def test_enables_addons_in_kodi_database(self):
+        import sqlite3
+        dbdir = os.path.join(USERDATA, "Database")
+        os.makedirs(dbdir, exist_ok=True)
+        con = sqlite3.connect(os.path.join(dbdir, "Addons33.db"))
+        con.execute("CREATE TABLE installed (id INTEGER PRIMARY KEY, addonID TEXT, enabled BOOLEAN)")
+        con.executemany("INSERT INTO installed (addonID, enabled) VALUES (?, ?)",
+                        [("pvr.iptvsimple", 0), ("resource.language.ru_ru", 0), ("some.other.addon", 0)])
+        con.commit()
+        self.run_main()
+        rows = dict(con.execute("SELECT addonID, enabled FROM installed"))
+        self.assertEqual(rows, {"pvr.iptvsimple": 1, "resource.language.ru_ru": 1, "some.other.addon": 0})
+        con.close()
+
     def test_corrupt_guisettings_after_power_cut(self):
         gui_path = os.path.join(USERDATA, "guisettings.xml")
         os.makedirs(USERDATA, exist_ok=True)

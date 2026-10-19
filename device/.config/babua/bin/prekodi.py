@@ -8,6 +8,7 @@ the box self-healing: whatever was changed through the UI is put back.
 
 import glob
 import os
+import sqlite3
 import sys
 import xml.etree.ElementTree as ET
 
@@ -87,6 +88,24 @@ def apply_cec():
             B.log("cec settings written:", os.path.basename(path))
 
 
+def enable_addons():
+    """Kodi registers add-ons it finds on disk as disabled. babuad enables
+    them over JSON-RPC; this is the fallback for when that can't happen
+    (Kodi is stopped here, and the database exists from the second boot on)."""
+    for db in glob.glob(os.path.join(USERDATA, "Database", "Addons*.db")):
+        try:
+            con = sqlite3.connect(db, timeout=10)
+            with con:
+                marks = ",".join("?" * len(B.MANAGED_ADDONS))
+                cur = con.execute(f"UPDATE installed SET enabled=1 WHERE enabled=0 AND addonID IN ({marks})",
+                                  B.MANAGED_ADDONS)
+            if cur.rowcount:
+                B.log(f"enabled {cur.rowcount} add-on(s) in {os.path.basename(db)}")
+            con.close()
+        except sqlite3.Error as exc:
+            B.log(f"{db}: {exc}")
+
+
 def iptv_instance_settings(cfg):
     epg = cfg.get("IPTV_EPG_URL", "")
     return {
@@ -123,6 +142,7 @@ def main():
         B.log("guisettings updated:", ", ".join(changed))
 
     apply_cec()
+    enable_addons()
 
     inst = os.path.join(USERDATA, "addon_data", B.PVR_ADDON, "instance-settings-1.xml")
     os.makedirs(os.path.dirname(inst), exist_ok=True)
