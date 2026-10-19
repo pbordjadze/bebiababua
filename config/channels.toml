@@ -25,6 +25,13 @@
 [sources.provider]
 url_env = "IPTV_M3U_URL"
 
+# Test channel for setting up before the subscription is sorted (public test
+# stream, H.264 720p; it's a ~10 min clip, not live). Remove when done.
+[[channel]]
+name = "Тест"
+url = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
+number = 99
+
 # A second source can serve as a fallback for channels the provider lacks:
 # [sources.backup]
 # url_env = "IPTV_BACKUP_M3U_URL"

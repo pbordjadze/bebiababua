@@ -7,6 +7,7 @@
 * TV switched on / any remote key -> screensaver ends -> last channel plays
 * a stream that dies is retried a few times before giving up
 * playlist reloads are only done while nothing is playing
+* after a clip sent with `babua show`, the channel comes back by itself
 """
 
 import os
@@ -125,6 +126,19 @@ class Daemon:
                     self.save_state()
 
         elif method == "Player.OnStop":
+            item = (data or {}).get("item") or {}
+            if item.get("type", "channel") != "channel":
+                # a clip/photo sent with `babua show` ended or was stopped:
+                # go back to what the TV was doing before
+                after = "channel"
+                try:
+                    with open(B.AFTER_MEDIA) as fh:
+                        after = fh.read().strip() or "channel"
+                    os.remove(B.AFTER_MEDIA)
+                except FileNotFoundError:
+                    pass
+                self.pending = (now + STOP_SETTLE, "resume" if after == "channel" else "stopped", None)
+                return
             ended = bool((data or {}).get("end"))
             kind = "died" if ended else "stopped"
             self.pending = (now + STOP_SETTLE, kind, None)
@@ -150,6 +164,10 @@ class Daemon:
                 self.pending = (time.monotonic() + delay, "retry", None)
                 return
             self.give_up()
+            return
+        if kind == "resume":
+            self.retries = 0
+            self.play_last("message finished")
             return
         if kind == "retry":
             self.play_last(f"retry {self.retries}")

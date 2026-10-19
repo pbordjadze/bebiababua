@@ -16,6 +16,7 @@
 #   babua screenshot [file]       grab what grandma sees -> local PNG
 #   babua key up|down|select|back|...   press remote buttons
 #   babua play N | say TEXT       switch channel / show a message on the TV
+#   babua show FILE|URL [SECS]    play a clip/photo on the TV, then back to the channel
 #   babua playlist | check-streams
 #   babua restart-kodi | reboot [--force] | update VERSION | edid
 #
@@ -109,6 +110,35 @@ case "$cmd" in
     path="$(remote "python3 $REMOTE_BIN/babua screenshot")"
     remote "cat '$path' && rm -f '$path'" > "$out"
     echo "$out" ;;
+  show)
+    # Photos become a short H.264 clip, videos are re-encoded unless already
+    # Pi-friendly, URLs (e.g. a Jellyfin stream) are played directly.
+    [ $# -ge 1 ] || die "usage: babua show FILE|URL [seconds-for-photos] [--force]"
+    src="$1"; shift
+    force=""; secs=20
+    for a in "$@"; do case "$a" in --force) force=--force ;; *) secs="$a" ;; esac; done
+    case "$src" in
+      *://*) remote "python3 $REMOTE_BIN/babua show $(squote "$src") $force"; exit $? ;;
+    esac
+    [ -f "$src" ] || die "no such file: $src"
+    command -v ffmpeg >/dev/null || die "need ffmpeg for local files"
+    tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+    fit="scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,format=yuv420p"
+    case "$(printf '%s' "$src" | tr 'A-Z' 'a-z')" in
+      *.jpg|*.jpeg|*.png|*.webp|*.gif|*.bmp)
+        ffmpeg -v error -loop 1 -i "$src" -f lavfi -i anullsrc=r=48000:cl=stereo -t "$secs" \
+          -vf "$fit" -r 25 -c:v libx264 -preset veryfast -tune stillimage -c:a aac -shortest "$tmp/show.mp4" ;;
+      *)
+        vcodec="$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,height -of csv=p=0 "$src" || true)"
+        case "$vcodec" in
+          h264,*) h="${vcodec#h264,}"; [ "${h:-9999}" -le 1080 ] && cp "$src" "$tmp/show.mp4" ;;
+        esac
+        [ -f "$tmp/show.mp4" ] || ffmpeg -v error -i "$src" -vf "scale=-2:'min(720,ih)',format=yuv420p" \
+          -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 160k -movflags +faststart "$tmp/show.mp4" ;;
+    esac
+    echo "uploading $(du -h "$tmp/show.mp4" | cut -f1)..."
+    remote "mkdir -p /storage/babua-media && rm -f /storage/babua-media/* && cat > /storage/babua-media/show.mp4" < "$tmp/show.mp4"
+    remote "python3 $REMOTE_BIN/babua show /storage/babua-media/show.mp4 $force" ;;
   edid)
     # Saves the TV's EDID so the Pi outputs the right picture even if it boots
     # while the TV is off or on another input. Run once with the TV ON.
@@ -116,7 +146,7 @@ case "$cmd" in
   status|health|playlist|check-streams|play|key|say|notify-test|vpn|update|reboot|restart-kodi)
     remote "python3 $REMOTE_BIN/babua $cmd $(squote "$@")" ;;
   help|-h|--help)
-    sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' ;;
+    sed -n '2,26p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' ;;
   *)
     die "unknown command '$cmd' (try: babua help)" ;;
 esac

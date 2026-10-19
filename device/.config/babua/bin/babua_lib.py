@@ -24,6 +24,8 @@ SCREENSHOT_DIR = os.environ.get("BABUA_SCREENSHOT_DIR", "/storage/screenshots")
 PLAYLIST_PATH = os.path.join(STATE_DIR, "playlist.m3u")
 RELOAD_FLAG = os.path.join(RUN_DIR, "reload_pending")
 QUIET_FLAG = os.path.join(STATE_DIR, "quiet_boot")
+AFTER_MEDIA = os.path.join(RUN_DIR, "after_media")   # "channel" | "blank", written by `babua show`
+MEDIA_DIR = os.environ.get("BABUA_MEDIA_DIR", "/storage/babua-media")
 
 # Add-ons the image ships unpacked in .kodi/addons. Kodi registers manually
 # placed add-ons as *disabled*, so babuad enables them over JSON-RPC.

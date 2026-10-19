@@ -8,6 +8,7 @@
   babua play <number>       switch the TV to channel <number>
   babua key <action>        send a Kodi action: up, down, select, back, stop, ...
   babua say <text>          show a message on the TV
+  babua show <file|url>     play a clip on the TV, then back to the channel
   babua screenshot          save a screenshot, print its path
   babua notify-test         send a test ntfy message
   babua vpn                 reconnect the WireGuard tunnel
@@ -89,6 +90,27 @@ def cmd_key(args):
 def cmd_say(args):
     with B.Kodi() as k:
         k.notify("", " ".join(args), 15000)
+    return 0
+
+
+def cmd_show(args):
+    """Play a clip (file on the box or URL) on the TV, then return to the channel."""
+    force = "--force" in args
+    args = [a for a in args if a != "--force"]
+    if not args:
+        print("usage: babua show <file-or-url> [--force]")
+        return 2
+    target = args[0]
+    with B.Kodi() as k:
+        was_channel = k.playing_channel_id() is not None
+        blanked = k.call("XBMC.GetInfoBooleans", {"booleans": ["System.ScreenSaverActive"]}).get("System.ScreenSaverActive")
+        if not was_channel and blanked and not force:
+            print("the TV looks off (nothing playing, screen blanked); use --force to play anyway")
+            return 3
+        B.ensure_dirs()
+        B.write_atomic(B.AFTER_MEDIA, "channel" if was_channel else "blank")
+        k.call("Player.Open", {"item": {"file": target}}, timeout=30)
+    print("showing", target, "- the channel resumes when it ends (BACK on the remote also ends it)")
     return 0
 
 
@@ -205,6 +227,7 @@ COMMANDS = {
     "play": cmd_play,
     "key": cmd_key,
     "say": cmd_say,
+    "show": cmd_show,
     "screenshot": cmd_screenshot,
     "notify-test": cmd_notify_test,
     "vpn": cmd_vpn,

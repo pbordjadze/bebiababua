@@ -7,6 +7,8 @@
     OK, left, right, BACK   channel list overlay (OK there switches, BACK closes)
     digits                  jump to channel number (Kodi default)
     stop, pause, menu       ignored - a frozen or vanished picture looks "broken"
+  Message clip from `babua show` (FullscreenVideo):
+    BACK / OK               end it; the channel comes back
   Channel list window (TVChannels) and Home:
     BACK never leaves the TV screens, so she cannot get lost in menus.
 
@@ -48,6 +50,21 @@
       <c>noop</c>
     </keyboard>
   </FullscreenLiveTV>
+
+  <!-- a clip sent with `babua show`: BACK/OK end it, babuad brings the channel back -->
+  <FullscreenVideo>
+    <remote>
+      <back>Stop</back>
+      <select>Stop</select>
+      <menu>noop</menu>
+      <title>noop</title>
+    </remote>
+    <keyboard>
+      <backspace>Stop</backspace>
+      <escape>Stop</escape>
+      <return>Stop</return>
+    </keyboard>
+  </FullscreenVideo>
 
   <PVROSDChannels>
     <remote>

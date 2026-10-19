@@ -13,6 +13,9 @@ from helpers import reset  # first: points babua at a scratch dir
 import babua_lib as B  # noqa: E402
 import babuad  # noqa: E402
 
+from importlib.machinery import SourceFileLoader  # noqa: E402
+CLI = SourceFileLoader("babua_cli", os.path.join(os.path.dirname(B.__file__), "babua")).load_module()
+
 
 class FakeKodi:
     def __init__(self):
@@ -68,6 +71,8 @@ class FakeKodi:
     def handle(self, method, p):
         if method == "JSONRPC.Ping":
             return "pong"
+        if method == "XBMC.GetInfoBooleans":
+            return {"System.ScreenSaverActive": self.count("GUI.ActivateScreenSaver") > 0 and not self.playing}
         if method == "Player.GetActivePlayers":
             return [{"playerid": 1, "type": "video"}] if self.playing else []
         if method == "Player.GetItem":
@@ -76,6 +81,13 @@ class FakeKodi:
             return {"channels": self.channels}
         if method == "PVR.GetChannelDetails":
             return {"channeldetails": {"label": f"chan{p['channelid']}"}}
+        if method == "Player.Open" and "file" in p["item"]:
+            if self.playing:
+                self.emit("Player.OnStop", {"item": {"type": "channel", "id": self.playing}, "end": False})
+            self.playing = "clip"
+            self.emit("Player.OnPlay", {"item": {"type": "unknown", "file": p["item"]["file"]}})
+            self.emit("Player.OnAVStart", {"item": {"type": "unknown"}})
+            return "OK"
         if method == "Player.Open":
             cid = p["item"]["channelid"]
             item = {"type": "channel", "id": cid}
@@ -207,6 +219,43 @@ class BabuadTest(unittest.TestCase):
         self.assertFalse(os.path.exists(B.QUIET_FLAG))
         self.kodi.emit("GUI.OnScreensaverDeactivated", {})            # morning: TV on
         self.assertTrue(wait_for(lambda: self.kodi.playing == 12))
+
+    def end_clip(self):
+        self.kodi.playing = None
+        self.kodi.emit("Player.OnStop", {"item": {"type": "unknown"}, "end": True})
+
+    def test_message_clip_then_channel_comes_back(self):
+        self.start()
+        self.kodi.handle("Player.Open", {"item": {"channelid": 11}})
+        B.write_atomic(B.AFTER_MEDIA, "channel")                       # what `babua show` writes
+        self.kodi.handle("Player.Open", {"item": {"file": "/storage/babua-media/show.mp4"}})
+        threading.Event().wait(0.3)
+        self.assertEqual(self.kodi.playing, "clip")                    # not interrupted
+        self.end_clip()
+        self.assertTrue(wait_for(lambda: self.kodi.playing == 11))
+        self.assertEqual(self.kodi.count("GUI.ActivateScreenSaver"), 0)
+        self.assertFalse(self.notify.called)                           # not a "dead stream"
+
+    def test_message_clip_while_tv_off_stays_dark(self):
+        self.start()
+        B.write_atomic(B.AFTER_MEDIA, "blank")
+        self.kodi.handle("Player.Open", {"item": {"file": "/storage/babua-media/show.mp4"}})
+        self.end_clip()
+        self.assertTrue(wait_for(lambda: self.kodi.count("GUI.ActivateScreenSaver") == 1))
+        self.assertIsNone(self.kodi.playing)
+
+    def test_show_cli(self):
+        self.start()
+        self.kodi.handle("Player.Open", {"item": {"channelid": 12}})
+        self.assertEqual(CLI.cmd_show(["/storage/babua-media/show.mp4"]), 0)
+        self.assertEqual(self.kodi.playing, "clip")
+        self.end_clip()
+        self.assertTrue(wait_for(lambda: self.kodi.playing == 12))
+        # TV off (blanked, nothing playing): refuses unless forced
+        self.kodi.handle("Player.Stop", {})
+        self.assertTrue(wait_for(lambda: self.kodi.count("GUI.ActivateScreenSaver") == 1))
+        self.assertEqual(CLI.cmd_show(["x.mp4"]), 3)
+        self.assertEqual(CLI.cmd_show(["x.mp4", "--force"]), 0)
 
     def test_playlist_reload_waits_until_idle(self):
         self.start()

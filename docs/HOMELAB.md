@@ -80,3 +80,34 @@ The Kodi web server runs on `http://10.66.66.20:8080` (user `kodi`, password
 `KODI_WEB_PASSWORD` from `site/secrets.env`). It's reachable over the VPN and
 from their LAN only. The Kore (Android) and Yatse apps on your phone can use
 it as a full remote. That's handy while you're on the phone with grandma.
+
+## Messages, photos and clips on their TV
+
+`tools/babua show` plays something on the TV and then returns to the
+channel by itself. If the TV is off it refuses (add `--force` to play anyway).
+Grandma can end it early with BACK or OK.
+
+```sh
+tools/babua show birthday.jpg 30     # photo, 30 s (converted to a clip locally)
+tools/babua show hello.mp4           # re-encoded to H.264 720p if the Pi 3 can't play it as is
+tools/babua show 'http://...'        # any URL the box can reach
+tools/babua say "Позвони мне!"       # small text pop-up, doesn't interrupt the picture
+```
+
+Local files need `ffmpeg` on your machine. They are uploaded to
+`/storage/babua-media/` (only the latest is kept).
+
+**From Jellyfin:** nothing on the TV depends on Jellyfin; it's just one more
+source. Add Jellyfin's network to `WG_ALLOWED_IPS` (and allow it in your
+homelab firewall), create a dedicated API key (Dashboard → API Keys), then:
+
+```sh
+# ask Jellyfin to transcode to something a Pi 3 decodes
+tools/babua show "http://192.168.10.5:8096/Videos/<ItemId>/stream.mp4?VideoCodec=h264&AudioCodec=aac&MaxHeight=720&api_key=<key>"
+```
+
+Use Jellyfin's IP: the box uses their DNS, which can't resolve your homelab names. The item id is in the Jellyfin web UI URL (`...details?id=<ItemId>`). I
+haven't tested these URL parameters against a live server. If they don't
+work, download the file and use `babua show file.mp4`, which transcodes
+locally. The API key ends up in Kodi's log on the box, so use a key that
+does nothing else.

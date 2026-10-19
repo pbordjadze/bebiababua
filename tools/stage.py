@@ -61,7 +61,7 @@ def check(cfg, site_dir):
     if not os.path.exists(os.path.join(site_dir, "ssh_host_ed25519_key")):
         errors.append("site/ssh_host_ed25519_key missing - run `tools/babua init`")
     if not cfg.get("IPTV_M3U_URL"):
-        warnings.append("IPTV_M3U_URL is empty - the TV will have no channels")
+        warnings.append("IPTV_M3U_URL is empty - only direct-URL channels (e.g. the test channel) will work")
     if cfg.get("WG_ENDPOINT"):
         for key in ("WG_ADDRESS", "WG_ALLOWED_IPS", "WG_PRIVATE_KEY", "WG_SERVER_PUBLIC_KEY"):
             if not cfg.get(key):
