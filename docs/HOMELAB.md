@@ -132,6 +132,11 @@ babua-tv ssh 'cec-ctl -d0 --to 0 --give-device-power-status; cec-ctl -d0 --to 0 
 babua-tv ssh 'grep -E "stalled|timeout waiting|demuxer|JSONRPC" /storage/.kodi/temp/kodi.log | tail'
 ```
 
+Alerts: since 2026-10-19 the box's `NTFY_URL` is a private ntfy.sh topic (no
+token; the random topic name is the secret), kept on the homelab in
+`~/.config/secrets/babua-ntfy-url`. `babua-tv notify-test` sends a test.
+No `HEARTBEAT_URL` yet, so silence from the box isn't reported.
+
 Their network (2026-10): Eero mesh, router <their router>, the box
 at <the box's LAN address>. The Pi is held to 2.4 GHz (`device/.config/iwd/main.conf`);
 its 5 GHz link to the Eero collapsed under streaming load.
