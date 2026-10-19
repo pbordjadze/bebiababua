@@ -344,6 +344,25 @@ CEC_SETTINGS = {
 }
 
 
+def wireguard_config(cfg):
+    """connman WireGuard provider file (.config/wireguard/babua.config)."""
+    lines = [
+        "[provider_wireguard]",
+        "Type = WireGuard",
+        "Name = babua homelab",
+        f"Host = {cfg['WG_ENDPOINT']}",
+        f"WireGuard.Address = {cfg['WG_ADDRESS']}",
+        f"WireGuard.PrivateKey = {cfg['WG_PRIVATE_KEY']}",
+        f"WireGuard.PublicKey = {cfg['WG_SERVER_PUBLIC_KEY']}",
+        f"WireGuard.AllowedIPs = {cfg['WG_ALLOWED_IPS']}",
+        f"WireGuard.EndpointPort = {cfg.get('WG_ENDPOINT_PORT', '51820')}",
+        "WireGuard.PersistentKeepalive = 25",
+    ]
+    if cfg.get("WG_PRESHARED_KEY"):
+        lines.append(f"WireGuard.PresharedKey = {cfg['WG_PRESHARED_KEY']}")
+    return "\n".join(lines) + "\n"
+
+
 # --------------------------------------------------------------------------
 # notifications (ntfy) with an on-disk outbox so alerts raised while the
 # internet is down are delivered once it returns.

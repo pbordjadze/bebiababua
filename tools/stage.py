@@ -83,24 +83,6 @@ def check(cfg, site_dir):
     return errors, warnings
 
 
-def wireguard_config(cfg):
-    lines = [
-        "[provider_wireguard]",
-        "Type = WireGuard",
-        "Name = babua homelab",
-        f"Host = {cfg['WG_ENDPOINT']}",
-        f"WireGuard.Address = {cfg['WG_ADDRESS']}",
-        f"WireGuard.PrivateKey = {cfg['WG_PRIVATE_KEY']}",
-        f"WireGuard.PublicKey = {cfg['WG_SERVER_PUBLIC_KEY']}",
-        f"WireGuard.AllowedIPs = {cfg['WG_ALLOWED_IPS']}",
-        f"WireGuard.EndpointPort = {cfg.get('WG_ENDPOINT_PORT', '51820')}",
-        "WireGuard.PersistentKeepalive = 25",
-    ]
-    if cfg.get("WG_PRESHARED_KEY"):
-        lines.append(f"WireGuard.PresharedKey = {cfg['WG_PRESHARED_KEY']}")
-    return "\n".join(lines) + "\n"
-
-
 def wifi_config(cfg):
     return (
         "[service_babua_wifi]\n"
@@ -152,7 +134,7 @@ def stage(out, site_dir, first_boot=True):
             put(out, f".cache/ssh/{name}", open(os.path.join(site_dir, name), "rb").read(), mode)
 
     if cfg.get("WG_ENDPOINT"):
-        put(out, ".config/wireguard/babua.config", wireguard_config(cfg), 0o600)
+        put(out, ".config/wireguard/babua.config", B.wireguard_config(cfg), 0o600)
     if cfg.get("WIFI_SSID"):
         put(out, ".cache/connman/babua-wifi.config", wifi_config(cfg), 0o600)
 

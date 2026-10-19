@@ -12,6 +12,8 @@
   babua screenshot          save a screenshot, print its path
   babua notify-test         send a test ntfy message
   babua vpn                 reconnect the WireGuard tunnel
+  babua vpn-setup HOST[:PORT] SERVER_PUBKEY [ADDR/PREFIX] [ALLOWED_IPS]
+                            turn the tunnel on from the box (e.g. from a phone)
   babua update <version>    stage a LibreELEC update (e.g. 12.2.2) for the next reboot
   babua restart-kodi [--force]  restart Kodi (applies CEC settings)
   babua reboot [--force]    reboot now unless something is playing
@@ -134,6 +136,51 @@ def cmd_notify_test(args):
     return 0
 
 
+def cmd_vpn_setup(args):
+    """Turn on the WireGuard tunnel from the box itself (e.g. from a phone):
+    babua vpn-setup HOST[:PORT] SERVER_PUBLIC_KEY [ADDRESS/PREFIX] [ALLOWED_IPS]
+    The box's own keys were generated when the image was built."""
+    if len(args) < 2:
+        print("usage: babua vpn-setup HOST[:PORT] SERVER_PUBLIC_KEY [ADDRESS/PREFIX] [ALLOWED_IPS]")
+        return 2
+    host, _, port = args[0].partition(":")
+    updates = {"WG_ENDPOINT": host, "WG_ENDPOINT_PORT": port or "51820", "WG_SERVER_PUBLIC_KEY": args[1]}
+    if len(args) > 2:
+        updates["WG_ADDRESS"] = args[2]
+        updates["BABUA_HOST"] = args[2].split("/")[0]
+    if len(args) > 3:
+        updates["WG_ALLOWED_IPS"] = args[3]
+    secrets = os.path.join(B.BABUA_DIR, "secrets.env")
+    with open(secrets, encoding="utf-8") as fh:
+        lines = fh.read().splitlines()
+    for key, value in updates.items():
+        for i, line in enumerate(lines):
+            if line.startswith(key + "="):
+                lines[i] = f"{key}={value}"
+                break
+        else:
+            lines.append(f"{key}={value}")
+    B.write_atomic(secrets, "\n".join(lines) + "\n", 0o600)
+    cfg = B.load_config()
+    missing = [k for k in ("WG_PRIVATE_KEY", "WG_ADDRESS", "WG_ALLOWED_IPS") if not cfg.get(k)]
+    if missing:
+        print("missing in secrets.env:", ", ".join(missing))
+        return 1
+    B.write_atomic("/storage/.config/wireguard/babua.config", B.wireguard_config(cfg), 0o600)
+    sh("systemctl", "restart", "connman-vpn")
+    time.sleep(3)
+    sh("systemctl", "restart", "babua-vpn")
+    print(f"tunnel address {cfg['WG_ADDRESS']}; this box's public key is {wg_public_key(cfg)}")
+    print("check with: wg show   (a 'latest handshake' line means it works)")
+    print("Also put these values into site/secrets.env on your laptop.")
+    return 0
+
+
+def wg_public_key(cfg):
+    proc = subprocess.run(["wg", "pubkey"], input=cfg.get("WG_PRIVATE_KEY", ""), capture_output=True, text=True)
+    return proc.stdout.strip() or "?"
+
+
 def cmd_vpn(args):
     return sh("/bin/sh", os.path.join(BIN, "babua-vpn"), "restart")
 
@@ -231,6 +278,7 @@ COMMANDS = {
     "screenshot": cmd_screenshot,
     "notify-test": cmd_notify_test,
     "vpn": cmd_vpn,
+    "vpn-setup": cmd_vpn_setup,
     "update": cmd_update,
     "reboot": cmd_reboot,
     "maintenance-reboot": cmd_maintenance_reboot,
