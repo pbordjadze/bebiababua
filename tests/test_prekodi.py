@@ -31,6 +31,9 @@ class PrekodiTest(unittest.TestCase):
         self.assertEqual(gui["locale.language"].text, "resource.language.ru_ru")
         self.assertEqual(gui["pvrplayback.confirmchannelswitch"].text, "false")
         self.assertEqual(gui["services.webserver"].text, "true")
+        # no Addons db yet: a TV start window would block Kodi's start-up on
+        # the "no PVR add-on" dialog before JSON-RPC is up
+        self.assertEqual(gui["lookandfeel.startupwindow"].text, str(B.HOME_WINDOW))
         cec = settings(os.path.join(USERDATA, "peripheral_data", "cec_CEC_Adapter.xml"))
         self.assertEqual(cec["standby_pc_on_tv_standby"].get("value"), "36045")
         self.assertEqual(cec["use_tv_menu_language"].get("value"), "0")
@@ -77,6 +80,21 @@ class PrekodiTest(unittest.TestCase):
         rows = dict(con.execute("SELECT addonID, enabled FROM installed"))
         self.assertEqual(rows, {"pvr.iptvsimple": 1, "resource.language.ru_ru": 1, "some.other.addon": 0})
         con.close()
+        gui = settings(os.path.join(USERDATA, "guisettings.xml"))
+        self.assertEqual(gui["lookandfeel.startupwindow"].text, str(B.TV_CHANNELS_WINDOW))
+
+    def test_home_start_window_while_pvr_addon_unregistered(self):
+        import sqlite3
+        dbdir = os.path.join(USERDATA, "Database")
+        os.makedirs(dbdir, exist_ok=True)
+        con = sqlite3.connect(os.path.join(dbdir, "Addons33.db"))
+        con.execute("CREATE TABLE installed (id INTEGER PRIMARY KEY, addonID TEXT, enabled BOOLEAN)")
+        con.execute("INSERT INTO installed (addonID, enabled) VALUES ('resource.language.ru_ru', 0)")
+        con.commit()
+        con.close()
+        self.run_main()
+        gui = settings(os.path.join(USERDATA, "guisettings.xml"))
+        self.assertEqual(gui["lookandfeel.startupwindow"].text, str(B.HOME_WINDOW))
 
     def test_corrupt_guisettings_after_power_cut(self):
         gui_path = os.path.join(USERDATA, "guisettings.xml")

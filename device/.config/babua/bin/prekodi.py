@@ -91,7 +91,9 @@ def apply_cec():
 def enable_addons():
     """Kodi registers add-ons it finds on disk as disabled. babuad enables
     them over JSON-RPC; this is the fallback for when that can't happen
-    (Kodi is stopped here, and the database exists from the second boot on)."""
+    (Kodi is stopped here, and the database exists from the second boot on).
+    Returns whether the PVR add-on is now enabled in the database."""
+    pvr_enabled = False
     for db in glob.glob(os.path.join(USERDATA, "Database", "Addons*.db")):
         try:
             con = sqlite3.connect(db, timeout=10)
@@ -101,9 +103,12 @@ def enable_addons():
                                   B.MANAGED_ADDONS)
             if cur.rowcount:
                 B.log(f"enabled {cur.rowcount} add-on(s) in {os.path.basename(db)}")
+            if con.execute("SELECT 1 FROM installed WHERE addonID=? AND enabled=1", (B.PVR_ADDON,)).fetchone():
+                pvr_enabled = True
             con.close()
         except sqlite3.Error as exc:
             B.log(f"{db}: {exc}")
+    return pvr_enabled
 
 
 def iptv_instance_settings(cfg):
@@ -137,12 +142,21 @@ def main():
     os.makedirs(B.SCREENSHOT_DIR, exist_ok=True)
     cfg = B.load_config()
 
-    changed = apply_settings_xml(os.path.join(USERDATA, "guisettings.xml"), B.kodi_settings(cfg))
+    gui = B.kodi_settings(cfg)
+    if not enable_addons():
+        # Kodi opens its start window before it loads the JSON-RPC methods, and
+        # a TV window with no PVR add-on enabled blocks there on a modal "no PVR
+        # add-on" dialog: until someone presses OK, every JSON-RPC call gets
+        # "Method not found", so babuad can't enable the add-on (first boot,
+        # before Kodi has created its database). Start on Home this time;
+        # babuad sets the TV window back once it has enabled the add-on.
+        gui["lookandfeel.startupwindow"] = B.HOME_WINDOW
+        B.log("PVR add-on not enabled yet: starting Kodi on Home")
+    changed = apply_settings_xml(os.path.join(USERDATA, "guisettings.xml"), gui)
     if changed:
         B.log("guisettings updated:", ", ".join(changed))
 
     apply_cec()
-    enable_addons()
 
     inst = os.path.join(USERDATA, "addon_data", B.PVR_ADDON, "instance-settings-1.xml")
     os.makedirs(os.path.dirname(inst), exist_ok=True)
