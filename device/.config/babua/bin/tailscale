@@ -1,0 +1,3 @@
+#!/bin/sh
+# `tailscale ...` on the box: the bundled binary, pointed at babua's tailscaled socket.
+exec /storage/.config/babua/tailscale/tailscale --socket=/run/tailscale/tailscaled.sock "$@"
