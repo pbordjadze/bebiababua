@@ -11,11 +11,42 @@
     BACK / OK               end it; the channel comes back
   Channel list window (TVChannels) and Home:
     BACK never leaves the TV screens, so she cannot get lost in menus.
+  Everywhere: the colour, guide, power, record, teletext, subtitle and library
+    keys do nothing. Kodi's defaults would open Videos (green), Music (yellow),
+    Pictures (blue), the TV guide or the shutdown menu, if her TV passes them.
+    They're repeated in each window because window defaults (FullscreenLiveTV
+    falls back to Kodi's FullscreenVideo map) win over <global>.
 
   Each window is defined for both <remote> (CEC arrives as remote buttons) and
   <keyboard> (USB keyboard / testing).
 -->
 <keymap>
+  <global>
+    <remote>
+      <menu>noop</menu>
+      <title>noop</title>
+      <red>noop</red>
+      <green>noop</green>
+      <yellow>noop</yellow>
+      <blue>noop</blue>
+      <guide>noop</guide>
+      <epgsearch>noop</epgsearch>
+      <livetv>noop</livetv>
+      <liveradio>noop</liveradio>
+      <recordedtv>noop</recordedtv>
+      <record>noop</record>
+      <myvideo>noop</myvideo>
+      <mymusic>noop</mymusic>
+      <mypictures>noop</mypictures>
+      <mytv>noop</mytv>
+      <power>noop</power>
+      <teletext>noop</teletext>
+      <subtitle>noop</subtitle>
+      <language>noop</language>
+      <playlist>noop</playlist>
+    </remote>
+  </global>
+
   <FullscreenLiveTV>
     <remote>
       <up>ChannelUp</up>
@@ -35,6 +66,26 @@
       <title>noop</title>
       <contentsmenu>noop</contentsmenu>
       <rootmenu>noop</rootmenu>
+      <!-- inherited Kodi defaults would leave the TV screens -->
+      <red>noop</red>
+      <green>noop</green>
+      <yellow>noop</yellow>
+      <blue>noop</blue>
+      <guide>noop</guide>
+      <epgsearch>noop</epgsearch>
+      <livetv>noop</livetv>
+      <liveradio>noop</liveradio>
+      <recordedtv>noop</recordedtv>
+      <record>noop</record>
+      <myvideo>noop</myvideo>
+      <mymusic>noop</mymusic>
+      <mypictures>noop</mypictures>
+      <mytv>noop</mytv>
+      <power>noop</power>
+      <teletext>noop</teletext>
+      <subtitle>noop</subtitle>
+      <language>noop</language>
+      <playlist>noop</playlist>
     </remote>
     <keyboard>
       <up>ChannelUp</up>
@@ -58,6 +109,26 @@
       <select>Stop</select>
       <menu>noop</menu>
       <title>noop</title>
+      <!-- inherited Kodi defaults would leave the TV screens -->
+      <red>noop</red>
+      <green>noop</green>
+      <yellow>noop</yellow>
+      <blue>noop</blue>
+      <guide>noop</guide>
+      <epgsearch>noop</epgsearch>
+      <livetv>noop</livetv>
+      <liveradio>noop</liveradio>
+      <recordedtv>noop</recordedtv>
+      <record>noop</record>
+      <myvideo>noop</myvideo>
+      <mymusic>noop</mymusic>
+      <mypictures>noop</mypictures>
+      <mytv>noop</mytv>
+      <power>noop</power>
+      <teletext>noop</teletext>
+      <subtitle>noop</subtitle>
+      <language>noop</language>
+      <playlist>noop</playlist>
     </remote>
     <keyboard>
       <backspace>Stop</backspace>
@@ -70,6 +141,26 @@
     <remote>
       <menu>noop</menu>
       <title>noop</title>
+      <!-- inherited Kodi defaults would leave the TV screens -->
+      <red>noop</red>
+      <green>noop</green>
+      <yellow>noop</yellow>
+      <blue>noop</blue>
+      <guide>noop</guide>
+      <epgsearch>noop</epgsearch>
+      <livetv>noop</livetv>
+      <liveradio>noop</liveradio>
+      <recordedtv>noop</recordedtv>
+      <record>noop</record>
+      <myvideo>noop</myvideo>
+      <mymusic>noop</mymusic>
+      <mypictures>noop</mypictures>
+      <mytv>noop</mytv>
+      <power>noop</power>
+      <teletext>noop</teletext>
+      <subtitle>noop</subtitle>
+      <language>noop</language>
+      <playlist>noop</playlist>
     </remote>
     <keyboard>
       <c>noop</c>
@@ -83,6 +174,26 @@
       <title>noop</title>
       <contentsmenu>noop</contentsmenu>
       <rootmenu>noop</rootmenu>
+      <!-- inherited Kodi defaults would leave the TV screens -->
+      <red>noop</red>
+      <green>noop</green>
+      <yellow>noop</yellow>
+      <blue>noop</blue>
+      <guide>noop</guide>
+      <epgsearch>noop</epgsearch>
+      <livetv>noop</livetv>
+      <liveradio>noop</liveradio>
+      <recordedtv>noop</recordedtv>
+      <record>noop</record>
+      <myvideo>noop</myvideo>
+      <mymusic>noop</mymusic>
+      <mypictures>noop</mypictures>
+      <mytv>noop</mytv>
+      <power>noop</power>
+      <teletext>noop</teletext>
+      <subtitle>noop</subtitle>
+      <language>noop</language>
+      <playlist>noop</playlist>
     </remote>
     <keyboard>
       <backspace>FullScreen</backspace>
@@ -94,6 +205,28 @@
   <Home>
     <remote>
       <back>ActivateWindow(TVChannels)</back>
+      <!-- inherited Kodi defaults would leave the TV screens -->
+      <menu>noop</menu>
+      <title>noop</title>
+      <red>noop</red>
+      <green>noop</green>
+      <yellow>noop</yellow>
+      <blue>noop</blue>
+      <guide>noop</guide>
+      <epgsearch>noop</epgsearch>
+      <livetv>noop</livetv>
+      <liveradio>noop</liveradio>
+      <recordedtv>noop</recordedtv>
+      <record>noop</record>
+      <myvideo>noop</myvideo>
+      <mymusic>noop</mymusic>
+      <mypictures>noop</mypictures>
+      <mytv>noop</mytv>
+      <power>noop</power>
+      <teletext>noop</teletext>
+      <subtitle>noop</subtitle>
+      <language>noop</language>
+      <playlist>noop</playlist>
     </remote>
     <keyboard>
       <backspace>ActivateWindow(TVChannels)</backspace>
