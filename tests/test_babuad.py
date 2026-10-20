@@ -237,6 +237,35 @@ class BabuadTest(unittest.TestCase):
             threading.Event().wait(0.8)                  # past TV_ON_SETTLE
         self.assertEqual(self.kodi.opened(), [12])       # one open, not two
 
+    def test_tv_standby_stops_playback_after_a_while(self):
+        d = babuad.Daemon()
+        d.kodi = B.Kodi().connect()
+        self.addCleanup(d.kodi.close)
+        self.kodi.handle("Player.Open", {"item": {"channelid": 12}})
+        with mock.patch.object(B, "tv_power", return_value="standby"), \
+                mock.patch.object(babuad, "TV_OFF_STOP", 0.3):
+            d.watch_tv()                                   # standby starts: keep playing for now
+            self.assertEqual(self.kodi.playing, 12)
+            threading.Event().wait(0.4)
+            d.watch_tv()                                   # still standby after TV_OFF_STOP
+            self.assertTrue(wait_for(lambda: self.kodi.playing is None))
+        with mock.patch.object(B, "tv_power", side_effect=["standby", None, None, None, "on"]):
+            d.standby_since = None
+            for _ in range(5):
+                d.watch_tv()                               # lost replies never stop anything
+        self.assertIsNone(d.standby_since)
+
+    def test_lost_replies_never_stop_playback(self):
+        d = babuad.Daemon()
+        d.kodi = B.Kodi().connect()
+        self.addCleanup(d.kodi.close)
+        self.kodi.handle("Player.Open", {"item": {"channelid": 12}})
+        with mock.patch.object(B, "tv_power", return_value=None), \
+                mock.patch.object(babuad, "TV_OFF_STOP", 0):
+            for _ in range(10):
+                d.watch_tv()
+        self.assertEqual(self.kodi.playing, 12)
+
     def test_tv_silent_in_standby_then_on_claims_input(self):
         d = babuad.Daemon()
         d.kodi = B.Kodi().connect()

@@ -7,6 +7,8 @@
 * TV switched on / any remote key -> screensaver ends -> last channel plays
 * TV switched on (seen by polling it over CEC) -> switch it to our input, once:
   someone who then picks another input on purpose stays there
+* TV in standby for 5 minutes while a channel plays -> stop and blank, so the
+  box doesn't stream all night (the TV doesn't always tell Kodi it went off)
 * a stream that dies is retried a few times before giving up
 * playlist reloads are only done while nothing is playing
 * after a clip sent with `babua show`, the channel comes back by itself
@@ -28,6 +30,7 @@ VERIFY_AFTER = 20              # a retry that shows no picture by then has faile
 TV_POLL = 10                   # seconds between CEC power-status polls of the TV
 TV_OFF_AFTER = 3               # unanswered polls in a row that count as "TV off"
 TV_ON_SETTLE = 5               # after claiming the input, let Kodi's own wake-up resume first
+TV_OFF_STOP = 300              # TV in standby this long while playing -> stop (no streaming all night)
 
 
 class Daemon:
@@ -42,6 +45,7 @@ class Daemon:
         self.state = B.read_json(PLAYER_STATE)
         self.tv_was_off = None     # None until the first answer: never grab the input at start
         self.tv_silent = 0
+        self.standby_since = None  # monotonic time of the first "standby" answer in a row
         self.next_tv_poll = 0.0
 
     # ------------------------------------------------------------------ util
@@ -193,7 +197,8 @@ class Daemon:
         self.blank()
 
     def watch_tv(self):
-        """Switch the TV to the Pi when it goes from off to on."""
+        """Switch the TV to the Pi when it goes from off to on; stop playing
+        when it has been in standby for a while."""
         power = B.tv_power()
         if power is None:
             self.tv_silent += 1
@@ -201,8 +206,22 @@ class Daemon:
                 self.tv_was_off = True
             return
         self.tv_silent = 0
+        if power in ("standby", "to-standby"):
+            # only an explicit standby answer counts: a lost reply while they
+            # watch must never stop the picture
+            now = time.monotonic()
+            self.standby_since = self.standby_since or now
+            if (now - self.standby_since >= TV_OFF_STOP and B.cfg_bool(self.cfg, "STOP_WHEN_TV_OFF", True)
+                    and self.playing()):
+                B.log("TV in standby for 5 min: stopping playback")
+                self.stop_playback()
+        else:
+            self.standby_since = None
         if power != "on":
             self.tv_was_off = True
+            return
+        if not B.cfg_bool(self.cfg, "CLAIM_TV_INPUT", True):
+            self.tv_was_off = False
             return
         if self.tv_was_off:
             B.log("TV turned on: switching it to our input")
@@ -249,7 +268,7 @@ class Daemon:
             self.blank()
 
         last_housekeeping = 0.0
-        watch_tv = B.cfg_bool(self.cfg, "CLAIM_TV_INPUT", True)
+        watch_tv = B.cfg_bool(self.cfg, "CLAIM_TV_INPUT", True) or B.cfg_bool(self.cfg, "STOP_WHEN_TV_OFF", True)
         while True:
             timeout = 30.0
             if self.pending:
