@@ -128,7 +128,7 @@ Useful checks:
 
 ```sh
 babua-tv ssh 'iw dev wlan0 link; iw dev wlan0 station dump | grep -E "tx failed|signal"'
-babua-tv ssh 'ping -c 40 -i 0.5 <their router> | tail -2'    # their router; loss = Wi-Fi
+babua-tv ssh 'ping -c 40 -i 0.5 ROUTER_IP | tail -2'    # their router; loss = Wi-Fi
 babua-tv ssh 'cec-ctl -d0 --to 0 --give-device-power-status; cec-ctl -d0 --to 0 --request-active-source'
 babua-tv ssh 'grep -E "stalled|timeout waiting|demuxer|JSONRPC" /storage/.kodi/temp/kodi.log | tail'
 ```
@@ -140,6 +140,5 @@ Silence is covered from the homelab side: its `babua-heartbeat.timer` pings the
 box over Tailscale every 5 min and posts "Offline" to the same topic after
 ~15 min without an answer (no `HEARTBEAT_URL` on the box).
 
-Their network (2026-10): Eero mesh, router <their router>, the box
-at <the box's LAN address>. The Pi is held to 2.4 GHz (`device/.config/iwd/main.conf`);
+Their network (2026-10): an Eero mesh. The Pi is held to 2.4 GHz (`device/.config/iwd/main.conf`);
 its 5 GHz link to the Eero collapsed under streaming load.

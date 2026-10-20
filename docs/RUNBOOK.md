@@ -15,7 +15,7 @@ shell on the box, where the same tools are on the PATH as `babua ...`.
 | Screen dark/dimmed, nothing playing | TV came on without waking Kodi | `tools/babua play N` and tell her "press OK when it's dark". If it happens daily, see VERIFY §3. |
 | "Канал сейчас не работает" | That stream is down upstream | `tools/babua check-streams`; if needed, remap the channel in `channels.toml` → `deploy` |
 | Every channel fails | Provider down, account expired or IP blocked | `tools/babua logs babua-playlist`; `tools/babua ssh 'cat /storage/.cache/babua/playlist.json'` |
-| Picture stutters | Weak network, HEVC stream, or under-voltage | `tools/babua health` (power), `tools/babua codecs`; Wi-Fi under load: `tools/babua ssh 'ping -c 40 -i 0.5 <their router>'` while a channel plays (loss = Wi-Fi, see `iw dev wlan0 link`) |
+| Picture stutters | Weak network, HEVC stream, or under-voltage | `tools/babua health` (power), `tools/babua codecs`; Wi-Fi under load: `tools/babua ssh 'ping -c 40 -i 0.5 ROUTER_IP'` while a channel plays (loss = Wi-Fi, see `iw dev wlan0 link`) |
 | Kodi menus in English / wrong look | Someone changed settings | `tools/babua restart-kodi` (prekodi + babuad put them back) |
 | Box unreachable | Power, internet or VPN | Check the heartbeat monitor; ask them to unplug the Pi and plug it back in; last resort: swap in the spare SD card |
 | TV on, but showing its own tuner/app, not the Pi | TV powered on into another input | Automatic since babuad's CEC watch (`TV turned on: switching it to our input` in `logs babuad`). By hand: `tools/babua ssh 'cec-ctl -d0 --to 0 --image-view-on; cec-ctl -d0 --active-source phys-addr=1.0.0.0'` (the Pi's address: `cec-ctl -d0 \| grep Physical`) |
