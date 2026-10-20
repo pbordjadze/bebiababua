@@ -7,8 +7,7 @@ don't need the visit either; they can be added later from home with
 
 ## At home, before you go (~30–45 min)
 
-1. **Get the code:** `git pull` the `claude/grandparents-iptv-pi-kg0s2z`
-   branch, then run `tools/babua init`.
+1. **Get the code:** `git pull` (branch `main`), then run `tools/babua init`.
 2. **Fill in `site/secrets.env`:**
    - `TAILSCALE_AUTHKEY`: optional. A one-off, pre-approved key from
      the Tailscale admin console (Settings → Keys) makes the box join your

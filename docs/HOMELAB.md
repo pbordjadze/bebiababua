@@ -101,7 +101,7 @@ does nothing else.
 
 ## Debugging from lenovo-homelab
 
-The homelab (`~/projects/bebiababua`, this branch) can reach the box for
+The homelab (`~/projects/bebiababua`, branch `main`) can reach the box for
 diagnosis without the `site/` secrets:
 
 - `ssh babua-tv`: its own key `~/.ssh/babua_tv_ed25519`, host key pinned in
