@@ -29,6 +29,7 @@ class FakeKodi:
         self.lock = threading.Lock()
         self.playing = None
         self.broken = set()          # channel ids whose streams die at once
+        self.fail_open = set()       # channel ids that never open (Kodi: plain stop, end=False)
         self.addons = {a: False for a in B.MANAGED_ADDONS}
         self.settings = {}
         self.channels = [
@@ -92,7 +93,9 @@ class FakeKodi:
             cid = p["item"]["channelid"]
             item = {"type": "channel", "id": cid}
             self.emit("Player.OnPlay", {"item": item})
-            if cid in self.broken:
+            if cid in self.fail_open:
+                threading.Timer(0.05, self.emit, ("Player.OnStop", {"item": item, "end": False})).start()
+            elif cid in self.broken:
                 threading.Timer(0.05, self.emit, ("Player.OnStop", {"item": item, "end": True})).start()
             else:
                 self.playing = cid
@@ -149,6 +152,8 @@ class BabuadTest(unittest.TestCase):
             mock.patch.object(babuad, "VERIFY_AFTER", 0.5),
             mock.patch.object(babuad.time, "sleep", lambda s: None),
             mock.patch.object(B, "notify"),
+            mock.patch.object(B, "queue_notify"),
+            mock.patch.object(B, "internet_ok", return_value=True),
             mock.patch.object(B, "tv_power", return_value=None),
             mock.patch.object(B, "claim_tv_input", return_value=True),
             mock.patch.object(babuad, "OPEN_GRACE", 0.2),
@@ -157,7 +162,7 @@ class BabuadTest(unittest.TestCase):
         for p in patches:
             p.start()
             self.addCleanup(p.stop)
-        self.notify = B.notify
+        self.notify = B.queue_notify     # babuad queues alerts; health sends them
         B.ensure_dirs()
 
     def start(self):
@@ -321,6 +326,51 @@ class BabuadTest(unittest.TestCase):
         self.kodi.emit("GUI.OnScreensaverDeactivated", {})
         threading.Event().wait(0.5)
         self.assertEqual(self.kodi.opened(), [])
+
+    def test_first_open_failing_retries_instead_of_going_dark(self):
+        self.start()
+        self.kodi.handle("Player.Open", {"item": {"channelid": 12}})   # watched earlier: picture shown
+        self.assertTrue(wait_for(lambda: self.daemon.av_started_at > 0))
+        self.kodi.handle("Player.Stop", {})                           # TV off
+        self.assertTrue(wait_for(lambda: self.kodi.count("GUI.ActivateScreenSaver") == 1))
+        self.kodi.fail_open.add(12)                                  # internet down when the TV comes back
+        self.kodi.emit("GUI.OnScreensaverDeactivated", {})
+        self.assertTrue(wait_for(lambda: self.notify.called, timeout=8), "never retried / gave up")
+        self.assertEqual(self.kodi.opened(), [12, 12, 12, 12])        # wake + 3 retries
+        self.assertEqual(self.kodi.count("GUI.ActivateScreenSaver"), 1)   # never blanked for good
+
+    def test_old_channel_stopping_after_a_switch_is_ignored(self):
+        self.start()
+        self.kodi.handle("Player.Open", {"item": {"channelid": 11}})
+        self.kodi.emit("Player.OnPlay", {"item": {"type": "channel", "id": 12}})   # she switched to 12
+        self.kodi.emit("Player.OnStop", {"item": {"type": "channel", "id": 11}, "end": False})
+        threading.Event().wait(0.5)
+        self.assertEqual(self.kodi.opened(), [])
+        self.assertEqual(self.kodi.count("GUI.ActivateScreenSaver"), 0)
+
+    def test_give_up_without_internet_says_so_and_alerts_once(self):
+        d = babuad.Daemon()
+        d.kodi = B.Kodi().connect()
+        self.addCleanup(d.kodi.close)
+        d.current_channel = 11
+        with mock.patch.object(B, "internet_ok", return_value=False):
+            d.give_up()
+            d.give_up()                                    # flapping internet: second give-up
+        self.assertEqual(self.notify.call_count, 1)        # one alert an hour
+        self.assertIn("no internet", self.notify.call_args[0][2])
+        self.assertEqual(self.kodi.count("GUI.ActivateWindow"), 0)   # no "pick another channel"
+        msgs = [p["message"] for m, p in self.kodi.calls if m == "GUI.ShowNotification"]
+        self.assertTrue(msgs and "интернет" in msgs[0])
+
+    def test_tv_on_resumes_even_if_the_input_switch_fails(self):
+        d = babuad.Daemon()
+        d.kodi = B.Kodi().connect()
+        self.addCleanup(d.kodi.close)
+        d.tv_was_off = True
+        with mock.patch.object(B, "tv_power", return_value="on"), \
+                mock.patch.object(B, "claim_tv_input", return_value=False):
+            d.watch_tv()
+        self.assertEqual(d.pending[1], "tv_on")
 
     def test_wake_with_nothing_played_picks_most_recent(self):
         self.start()

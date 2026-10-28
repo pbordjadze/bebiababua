@@ -398,10 +398,12 @@ def tailscale_status():
         return None
 
 
-def tailscale_up(cfg, authkey):
-    """Join the tailnet. DNS and firewall handling stay with LibreELEC."""
+def tailscale_up(cfg, authkey=None):
+    """Join the tailnet (or, without a key, switch a stopped node back on).
+    DNS and firewall handling stay with LibreELEC."""
     hostname = cfg.get("HOSTNAME") or socket.gethostname()
-    return tailscale("up", f"--authkey={authkey}", f"--hostname={hostname}",
+    key = [f"--authkey={authkey}"] if authkey else []
+    return tailscale("up", *key, f"--hostname={hostname}",
                      "--accept-dns=false", "--netfilter-mode=off", timeout=90)
 
 
@@ -469,6 +471,32 @@ def notify(cfg, title, message, priority=3, tags=""):
                 fh.write(json.dumps(msg, ensure_ascii=False) + "\n")
     except Exception as exc:  # noqa: BLE001 - alerting must never kill the caller
         log("notify error:", exc)
+
+
+def queue_notify(cfg, title, message, priority=3, tags=""):
+    """Leave an alert for the next health run to send: for callers that must
+    not wait on a dead network (babuad)."""
+    host = cfg.get("HOSTNAME") or socket.gethostname()
+    msg = {"title": f"[{host}] {title}", "message": message, "priority": priority, "tags": tags,
+           "queued_at": int(time.time())}
+    log("queued notify:", title, "-", message.replace("\n", " | "))
+    try:
+        os.makedirs(STATE_DIR, exist_ok=True)
+        with open(OUTBOX, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(msg, ensure_ascii=False) + "\n")
+    except OSError as exc:
+        log("queue notify failed:", exc)
+
+
+def internet_ok(timeout=3):
+    """Can the box reach the internet at all (any of three well-known hosts)?"""
+    for host, port in (("1.1.1.1", 443), ("8.8.8.8", 53), ("9.9.9.9", 443)):
+        try:
+            socket.create_connection((host, port), timeout=timeout).close()
+            return True
+        except OSError:
+            continue
+    return False
 
 
 def flush_outbox(cfg):

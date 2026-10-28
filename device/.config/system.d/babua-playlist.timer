@@ -1,9 +1,11 @@
 [Unit]
-Description=babua: refresh the channel list at boot and every 6 hours
+Description=babua: refresh the channel list at boot and every 30 min (full fetch every 6 h)
 
 [Timer]
 OnBootSec=45s
-OnUnitActiveSec=6h
+# every 30 min: a failed fetch (first boot, provider blip) is retried soon;
+# playlist.py itself only does a full fetch every 6 h when all is well
+OnUnitActiveSec=30min
 
 [Install]
 WantedBy=timers.target

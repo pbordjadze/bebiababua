@@ -242,8 +242,30 @@ def load_cfg(args):
     return B.load_config()
 
 
+REFRESH_EVERY = 6 * 3600        # the timer runs every 30 min; a full fetch only this often when all is well
+
+
+def config_digest(args):
+    """What the playlist is built from (channel list, provider URL): a change means rebuild now."""
+    h = hashlib.sha256()
+    for path in (config_paths(args)[0], args.secrets or os.path.join(B.BABUA_DIR, "secrets.env")):
+        try:
+            with open(path, "rb") as fh:
+                h.update(fh.read())
+        except OSError:
+            pass
+    return h.hexdigest()[:12]
+
+
 def install(args):
     B.ensure_dirs()
+    status = B.read_json(STATUS_PATH)
+    digest = config_digest(args)
+    if (not getattr(args, "force", False) and os.path.exists(B.PLAYLIST_PATH)
+            and time.time() - status.get("last_full_success", 0) < REFRESH_EVERY
+            and not status.get("missing") and not status.get("hidden")
+            and status.get("config") == digest):
+        return 0                   # fresh, complete, unchanged: nothing to do this half hour
     cfg = load_cfg(args)
     sources, channels = load_channels(config_paths(args)[0])
     parsed, src_status = fetch_sources(sources, cfg)
@@ -251,7 +273,6 @@ def install(args):
     if os.path.exists(B.PLAYLIST_PATH):
         with open(B.PLAYLIST_PATH, encoding="utf-8") as fh:
             previous = {e.name: e for e in parse_m3u(fh.read())[1]}
-    status = B.read_json(STATUS_PATH)
     hidden = set(status.get("hidden", []))
     text, resolved, missing = build(sources, channels, parsed, cfg, previous, hidden)
     hidden &= set(resolved)
@@ -273,6 +294,7 @@ def install(args):
     })
     if status["sources_ok"]:
         status["last_full_success"] = int(time.time())
+        status["config"] = digest
 
     if not resolved:
         B.log("nothing resolved; keeping the installed playlist")
@@ -461,6 +483,7 @@ def main():
     ap.add_argument("--config", help="directory with channels.toml (default: on-box config)")
     ap.add_argument("--secrets", help="secrets.env (admin PC use)")
     ap.add_argument("--check-streams", action="store_true")
+    ap.add_argument("--force", action="store_true", help="fetch and rebuild even if the playlist is fresh")
     ap.add_argument("--preview", action="store_true")
     ap.add_argument("--codecs", action="store_true")
     ap.add_argument("--list", metavar="SOURCE")

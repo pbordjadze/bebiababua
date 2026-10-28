@@ -81,7 +81,7 @@ def cmd_health(args):
 
 
 def cmd_playlist(args):
-    return sh(sys.executable, os.path.join(BIN, "playlist.py"), *args)
+    return sh(sys.executable, os.path.join(BIN, "playlist.py"), "--force", *args)
 
 
 def cmd_check_streams(args):

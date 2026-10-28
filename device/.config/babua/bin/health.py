@@ -41,6 +41,97 @@ def check_internet(cfg):
     return True, "ok"
 
 
+# Their router unreachable this many 5-minute runs in a row: restart Wi-Fi, then
+# reboot (a stuck Wi-Fi driver or network stack otherwise needs someone to unplug
+# the Pi). Router fine but no internet = their ISP: nothing to repair here.
+WIFI_RESTART_AFTER = 3          # ~15 min
+REBOOT_AFTER = 9                # ~45 min
+REBOOT_MIN_UPTIME = 6 * 3600    # at most one such reboot per 6 h
+
+
+def default_gateway():
+    try:
+        with open("/proc/net/route") as fh:
+            for line in fh.readlines()[1:]:
+                f = line.split()
+                if f[1] == "00000000" and int(f[3], 16) & 2:     # default route, RTF_GATEWAY
+                    return socket.inet_ntoa(bytes.fromhex(f[2])[::-1])
+    except (OSError, ValueError, IndexError):
+        pass
+    return None
+
+
+def uptime():
+    try:
+        with open("/proc/uptime") as fh:
+            return float(fh.read().split()[0])
+    except (OSError, ValueError):
+        return 0.0
+
+
+def check_router(cfg, state, repair):
+    gw = default_gateway()
+    ok = bool(gw) and B.run(["ping", "-c", "2", "-W", "3", gw], timeout=15)[0] == 0
+    if ok:
+        state["router_fails"] = 0
+        return True, f"answers ({gw})"
+    fails = state.get("router_fails", 0) + 1
+    state["router_fails"] = fails
+    what = f"router {gw} not answering" if gw else "no Wi-Fi connection"
+    if repair and fails >= REBOOT_AFTER and uptime() > REBOOT_MIN_UPTIME:
+        B.queue_notify(cfg, "Rebooting", f"{what} for {fails * 5} min; Wi-Fi restart didn't help.", 4, "warning")
+        B.log(f"{what} for {fails * 5} min: rebooting")
+        B.run(["systemctl", "reboot"])
+        return False, f"{what} for {fails * 5} min; rebooting"
+    if repair and fails % WIFI_RESTART_AFTER == 0:
+        B.log(f"{what} for {fails * 5} min: restarting Wi-Fi")
+        B.run(["systemctl", "restart", "iwd"], timeout=60)
+        return False, f"{what} for {fails * 5} min; restarted Wi-Fi"
+    return False, f"{what} ({fails}x)"
+
+
+def check_babuad(cfg, state):
+    rc, out = B.run(["systemctl", "show", "-p", "ActiveState", "-p", "NRestarts", "babuad"])
+    props = dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
+    restarts = int(props.get("NRestarts", "0") or 0)
+    before = state.get("babuad_restarts", restarts)
+    state["babuad_restarts"] = restarts
+    if props.get("ActiveState") != "active":
+        return False, f"babuad is {props.get('ActiveState', 'unknown')}"
+    if restarts - before >= 3:
+        return False, f"babuad keeps crashing ({restarts - before} restarts in 5 min)"
+    rc, log = B.run(["journalctl", "-u", "babuad", "--since", "-6min", "-o", "cat", "--no-pager"])
+    errors = [line for line in log.splitlines() if line.startswith("babuad error:")]
+    if errors:
+        return False, f"{len(errors)} error(s): {errors[-1][14:140]}"
+    return True, "running"
+
+
+def check_channels(cfg, state):
+    n = B.kodi_try(lambda k: len(k.tv_channels()), default=None)
+    if n is None:
+        return True, "unknown (Kodi not answering)"   # the kodi check reports that
+    if n == 0:
+        # twice in a row: babuad's add-on reload after a playlist change empties the list for seconds
+        state["no_channels"] = state.get("no_channels", 0) + 1
+        if state["no_channels"] >= 2:
+            return False, "Kodi has no TV channels (IPTV add-on off, or Kodi in safe mode?)"
+        return True, "none right now (add-on reloading?)"
+    state["no_channels"] = 0
+    return True, f"{n} in Kodi"
+
+
+def check_cec(cfg):
+    path = os.path.join(B.RUN_DIR, "cec_ok")
+    try:
+        age = time.time() - os.path.getmtime(path)
+    except OSError:
+        age = uptime()             # /run is new at every boot
+    if age > 24 * 3600:
+        return False, "TV hasn't answered over HDMI-CEC for a day (Anynet+ off? cable?) - her remote won't work"
+    return True, "TV answers"
+
+
 def wg_handshake_age():
     rc, out = B.run(["wg", "show", "all", "latest-handshakes"])
     if rc != 0 or not out:
@@ -67,6 +158,10 @@ def check_tailscale(cfg, repair):
             rc, out = B.tailscale_up(cfg, key)
             return False, "joining the tailnet" if rc == 0 else f"tailscale up failed: {out[-150:]}"
         return False, "not logged in yet"
+    if state == "Stopped" and repair:
+        # `tailscale down` (by hand, by accident) survives reboots: switch it back on
+        rc, out = B.tailscale_up(cfg)
+        return False, "tailscale was switched off; switched it back on" if rc == 0 else f"tailscale up failed: {out[-150:]}"
     if state != "Running":
         return False, f"tailscale state {state}"
     me = st.get("Self") or {}
@@ -252,9 +347,12 @@ def main():
     B.ensure_dirs()
     cfg = B.load_config()
     state = B.read_json(STATE_PATH)
+    if state.get("boot_id") not in (None, boot_id()):
+        state["kodi_fails"] = 0    # last boot's count: don't restart a Kodi that's still starting
 
     checks = {
         "internet": lambda: check_internet(cfg),
+        "router": lambda: check_router(cfg, state, repair),
         "vpn": lambda: check_vpn(cfg, repair),
         "kodi": lambda: check_kodi(cfg, state, repair),
         "power": lambda: check_power(cfg),
@@ -264,6 +362,9 @@ def main():
         "playlist": lambda: check_playlist(cfg),
         "playback": lambda: check_player(cfg),
         "screen": lambda: check_screen(cfg, state),
+        "babuad": lambda: check_babuad(cfg, state),
+        "channels": lambda: check_channels(cfg, state),
+        "cec": lambda: check_cec(cfg),
     }
     results = {}
     for name, fn in checks.items():
@@ -278,11 +379,12 @@ def main():
         return 0
 
     now = int(time.time())
+    alerts = []                    # sent after the state is saved, so a run killed mid-send can't repeat them
     if state.get("boot_id") != boot_id():
         last = state.get("last_run")
         gap = f"; previous check {time.strftime('%Y-%m-%d %H:%M', time.localtime(last))}" if last else ""
         rc, up = B.run(["uptime"])
-        B.notify(cfg, "Booted", f"Box started ({up}){gap}", 2, "electric_plug")
+        alerts.append(("Booted", f"Box started ({up}){gap}", 2, "electric_plug"))
         state["boot_id"] = boot_id()
 
     # internet down makes everything downstream noisy; report only that
@@ -295,16 +397,19 @@ def main():
         current[name] = detail
     for name, detail in current.items():
         if name not in previous:
-            prio = 4 if name in ("power", "kodi", "internet") else 3
-            B.notify(cfg, f"Problem: {name}", detail, prio, "warning")
+            prio = 4 if name in ("power", "kodi", "internet", "router", "babuad", "channels") else 3
+            alerts.append((f"Problem: {name}", detail, prio, "warning"))
     for name in previous:
         if name not in current:
-            B.notify(cfg, f"Recovered: {name}", results[name][1], 2, "white_check_mark")
+            alerts.append((f"Recovered: {name}", results[name][1] if name in results else "ok", 2, "white_check_mark"))
     state["problems"] = current
     state["last_run"] = now
     state["last_results"] = {k: {"ok": v[0], "detail": v[1]} for k, v in results.items()}
     B.write_json(STATE_PATH, state)
 
+    send = B.notify if not offline else B.queue_notify   # offline: don't hang on DNS, queue
+    for alert in alerts:
+        send(cfg, *alert)
     if not offline:
         B.flush_outbox(cfg)
         heartbeat(cfg, list(current))

@@ -10,8 +10,8 @@
 * TV in standby for 5 minutes while a channel plays -> stop and blank, so the
   box doesn't stream all night (the TV doesn't always tell Kodi it went off)
 * after giving up on a channel (e.g. their internet is down), keep trying once a
-  minute for 2 hours while the TV is on, so the picture comes back by itself;
-  Kodi's "playback aborted" boxes from those attempts are closed
+  minute while the TV is on, so the picture comes back by itself; Kodi's
+  "playback aborted" boxes from those attempts are closed straight away
 * a stream that dies is retried a few times before giving up
 * playlist reloads are only done while nothing is playing
 * after a clip sent with `babua show`, the channel comes back by itself
@@ -21,6 +21,7 @@ import os
 import socket
 import sys
 import time
+import traceback
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import babua_lib as B  # noqa: E402
@@ -36,7 +37,9 @@ TV_ON_SETTLE = 5               # after claiming the input, let Kodi's own wake-u
 TV_OFF_STOP = 300              # TV in standby this long while playing -> stop (no streaming all night)
 OPEN_GRACE = 15                # a channel opened this recently is still starting: don't open another
 RECOVER_EVERY = 60             # after giving up, try the channel again this often...
-RECOVER_FOR = 2 * 3600         # ...for this long (an internet outage), while the TV is on
+RECOVER_FOR = 12 * 3600        # ...for this long, while the TV is on (it pauses in standby)
+DOWN_ALERT_EVERY = 3600        # at most one "Channel down" alert an hour (flapping internet)
+CEC_OK_PATH = os.path.join(B.RUN_DIR, "cec_ok")   # touched when the TV answers over CEC; health reads it
 
 
 class Daemon:
@@ -56,6 +59,7 @@ class Daemon:
         self.last_open = -OPEN_GRACE  # monotonic time of babuad's last channel open
         self.recover_until = 0.0   # > now: given up on a channel, retrying once a minute
         self.message_seen = False  # a Kodi message box was up at the last housekeeping check
+        self.tidy_at = 0.0         # > 0: close Kodi's error box from a failed attempt at this time
 
     # ------------------------------------------------------------------ util
     def save_state(self):
@@ -80,6 +84,7 @@ class Daemon:
             B.log("no channels yet; nothing to play")
             return
         self.last_open = now
+        self.av_started_at = 0.0   # no picture from this open yet
         B.log(f"playing channel {channel} ({reason})")
         try:
             self.kodi.play_channel(channel)
@@ -156,6 +161,8 @@ class Daemon:
             item = (data or {}).get("item") or {}
             if item.get("type") == "channel" and item.get("id"):
                 self.current_channel = item["id"]
+            if method == "Player.OnPlay":
+                self.av_started_at = 0.0   # a new open: no picture from it yet
             if now < self.quiet_until:
                 B.log("quiet boot: stopping start-up playback")
                 self.stop_playback()
@@ -187,13 +194,17 @@ class Daemon:
                     pass
                 self.pending = (now + STOP_SETTLE, "resume" if after == "channel" else "stopped", None)
                 return
+            if now < self.quiet_until:
+                return             # the quiet boot stopped it on purpose
             if now < self.recover_until:
-                return             # a failed recovery attempt; "recover" checks back itself
+                self.tidy_at = now + 4   # a failed recovery attempt: close its error box
+                return             # "recover" checks back itself
+            if item.get("id") and self.current_channel and item["id"] != self.current_channel:
+                return             # the old channel stopping after a switch
             ended = bool((data or {}).get("end"))
-            # a retry that never showed a picture failed (Kodi reports that as a
-            # plain stop): keep retrying instead of blanking for good
-            failed_retry = self.retries and not self.av_started_at
-            kind = "died" if ended or failed_retry else "stopped"
+            # an open that never showed a picture failed (Kodi reports that as a
+            # plain stop, e.g. no internet): retry instead of blanking for good
+            kind = "died" if ended or not self.av_started_at else "stopped"
             self.pending = (now + STOP_SETTLE, kind, None)
 
         elif method == "GUI.OnScreensaverDeactivated":
@@ -209,6 +220,8 @@ class Daemon:
     def on_pending(self, kind):
         if self.playing():
             return
+        if kind == "died" and self.standby_since:
+            kind = "stopped"       # TV is off: nobody's watching, don't retry
         if kind == "died" and self.current_channel is not None:
             # av_started_at == 0: no picture since the last retry
             if self.av_started_at and time.monotonic() - self.av_started_at > STABLE_AFTER:
@@ -240,6 +253,9 @@ class Daemon:
             self.pending = (now + RECOVER_EVERY, "recover", None)
             if self.standby_since:
                 return             # TV off: try again when it's on (or "TV turned on" will)
+            idle = (self.kodi.call("XBMC.GetInfoBooleans", {"booleans": ["System.IdleTime(60)"]}) or {})
+            if idle.get("System.IdleTime(60)") is False:
+                return             # she's using the remote (picking a channel): don't grab the screen
             self.close_messages()
             self.play_last("trying again after a failure", retry=True)
             return
@@ -264,6 +280,11 @@ class Daemon:
                 self.tv_was_off = True
             return
         self.tv_silent = 0
+        try:
+            with open(CEC_OK_PATH, "w") as fh:   # /run (RAM): no SD wear
+                fh.write(str(int(time.time())))
+        except OSError:
+            pass
         if power in ("standby", "to-standby"):
             # only an explicit standby answer counts: a lost reply while they
             # watch must never stop the picture
@@ -283,7 +304,9 @@ class Daemon:
             return
         if self.tv_was_off:
             B.log("TV turned on: switching it to our input")
-            if B.claim_tv_input() and B.cfg_bool(self.cfg, "RESUME_ON_WAKE", True) and not self.pending:
+            if not B.claim_tv_input():
+                B.log("couldn't switch the input (no HDMI address yet)")
+            if B.cfg_bool(self.cfg, "RESUME_ON_WAKE", True) and not self.pending:
                 # The switch usually wakes Kodi, which resumes by itself
                 # (OnScreensaverDeactivated); opening a channel at the same
                 # moment makes Kodi abort one and show an error dialog.
@@ -297,21 +320,33 @@ class Daemon:
             name = info["channeldetails"]["label"]
         except (B.KodiError, KeyError, TypeError):
             pass
-        B.log(f"giving up on channel {name}")
-        self.state["failure"] = {"channel": name, "at": int(time.time())}
-        self.save_state()
-        self.retries = 0
-        msg = self.cfg.get("MSG_CHANNEL_DOWN", "Канал сейчас не работает. Выберите другой.")
-        try:
-            self.kodi.notify("IPTV", msg, 10000)
-            self.kodi.call("GUI.ActivateWindow", {"window": "tvchannels"})
-        except B.KodiError:
-            pass
-        B.notify(self.cfg, "Channel down", f"'{name}' failed {len(RETRY_DELAYS) + 1} times in a row.", 3, "tv")
-        self.close_messages()
         # often their internet, not the channel: keep trying while the TV is on
         self.recover_until = time.monotonic() + RECOVER_FOR
         self.pending = (time.monotonic() + RECOVER_EVERY, "recover", None)
+        online = B.internet_ok()
+        B.log(f"giving up on channel {name}" + ("" if online else " (no internet)"))
+        self.state["failure"] = {"channel": name, "at": int(time.time())}
+        self.retries = 0
+        self.close_messages()
+        if online:
+            msg = self.cfg.get("MSG_CHANNEL_DOWN", "Канал сейчас не работает. Выберите другой.")
+        else:
+            msg = self.cfg.get("MSG_NO_INTERNET", "Нет интернета. Изображение вернётся само.")
+        try:
+            self.kodi.notify("IPTV", msg, 15000)
+            if online:             # this channel's problem: let her pick another
+                self.kodi.call("GUI.ActivateWindow", {"window": "tvchannels"})
+        except B.KodiError:
+            pass
+        alert = time.time() - self.state.get("down_alert_at", 0) > DOWN_ALERT_EVERY
+        if alert:
+            self.state["down_alert_at"] = int(time.time())
+        self.save_state()
+        if alert:
+            what = "" if online else " (no internet on the box)"
+            # queued, sent by the next health run: never blocks babuad on a dead network
+            B.queue_notify(self.cfg, "Channel down", f"'{name}' failed {len(RETRY_DELAYS) + 1} times in a row{what}.",
+                           3, "tv")
 
     # ------------------------------------------------------------------ main
     def session(self):
@@ -337,6 +372,8 @@ class Daemon:
                 timeout = max(0.1, self.pending[0] - time.monotonic())
             if watch_tv:
                 timeout = min(timeout, max(0.1, self.next_tv_poll - time.monotonic()))
+            if self.tidy_at:
+                timeout = min(timeout, max(0.1, self.tidy_at - time.monotonic()))
             try:
                 msg = self.kodi.read_notification(timeout)
             except socket.timeout:
@@ -347,6 +384,9 @@ class Daemon:
                 _, kind, _ = self.pending
                 self.pending = None
                 self.on_pending(kind)
+            if self.tidy_at and time.monotonic() >= self.tidy_at:
+                self.tidy_at = 0.0
+                self.close_messages()
             if watch_tv and time.monotonic() >= self.next_tv_poll:
                 self.next_tv_poll = time.monotonic() + TV_POLL
                 self.watch_tv()
@@ -371,10 +411,16 @@ def main():
         except (OSError, B.KodiError, ValueError) as exc:
             # Kodi starting, restarting or crashed; systemd restarts it.
             B.log("kodi session ended:", repr(exc))
+            delay = 5
+        except Exception:  # noqa: BLE001 - a bug or an odd reply must not kill the daemon
+            B.log("babuad error:", traceback.format_exc().strip().replace("\n", " | "))
+            delay = 30
+        else:
+            delay = 5
         finally:
             if daemon.kodi:
                 daemon.kodi.close()
-        time.sleep(5)
+        time.sleep(delay)
         daemon.cfg = B.load_config()
 
 

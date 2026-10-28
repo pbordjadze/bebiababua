@@ -145,6 +145,33 @@ class InstallTest(unittest.TestCase):
         self.assertNotIn("password=p", str(status))                         # no credentials leak
 
 
+    def test_fresh_unchanged_playlist_is_left_alone(self):
+        reset()
+        Handler.fail = False
+        self.run_install()
+        conf = tempfile.mkdtemp()
+        with open(os.path.join(conf, "channels.toml"), "w", encoding="utf-8") as fh:
+            fh.write(read(CHANNELS))
+        secrets = os.path.join(conf, "secrets.env")
+        with open(secrets, "w") as fh:
+            fh.write(f"IPTV_M3U_URL=http://127.0.0.1:{self.srv.server_port}/get.php?username=u&password=p\n")
+            fh.write("DIRECT_URL=https://direct.example/s.m3u8\n")
+        args = mock.Mock(config=conf, secrets=secrets, force=False)
+        with mock.patch.object(B.time, "sleep"):
+            P.install(args)                                       # same content: digest recorded
+        st = B.read_json(P.STATUS_PATH)
+        st["missing"] = []                                        # the fixture has a missing channel
+        B.write_json(P.STATUS_PATH, st)
+        Handler.fail = True                                       # a fetch now would fail...
+        with mock.patch.object(P, "fetch_sources", side_effect=AssertionError("fetched")):
+            P.install(args)                                       # ...but none happens
+        with open(os.path.join(conf, "channels.toml"), "a", encoding="utf-8") as fh:
+            fh.write("\n# changed\n")
+        with mock.patch.object(P, "fetch_sources", return_value=({}, {})) as fetched:
+            P.install(args)                                       # config changed: rebuild
+        self.assertTrue(fetched.called)
+        Handler.fail = False
+
     def names(self):
         return [e.name for e in P.parse_m3u(read(B.PLAYLIST_PATH))[1]]
 

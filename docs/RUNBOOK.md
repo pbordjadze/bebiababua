@@ -17,11 +17,28 @@ shell on the box, where the same tools are on the PATH as `babua ...`.
 | Every channel fails | Provider down, account expired or IP blocked | `tools/babua logs babua-playlist`; `tools/babua ssh 'cat /storage/.cache/babua/playlist.json'` |
 | Picture stutters | Weak network, HEVC stream, or under-voltage | `tools/babua health` (power), `tools/babua codecs`; Wi-Fi under load: `tools/babua ssh 'ping -c 40 -i 0.5 ROUTER_IP'` while a channel plays (loss = Wi-Fi, see `iw dev wlan0 link`) |
 | Kodi menus in English / wrong look | Someone changed settings | `tools/babua restart-kodi` (prekodi + babuad put them back) |
-| Box unreachable | Power, internet or VPN | Check the heartbeat monitor; ask them to unplug the Pi and plug it back in; last resort: swap in the spare SD card |
+| Box unreachable | Power, internet or VPN | Check the heartbeat monitor; ask them to unplug the Pi and plug it back in (there is no spare SD card) |
 | TV on, but showing its own tuner/app, not the Pi | TV powered on into another input | Automatic since babuad's CEC watch (`TV turned on: switching it to our input` in `logs babuad`). By hand: `tools/babua ssh 'cec-ctl -d0 --to 0 --image-view-on; cec-ctl -d0 --active-source phys-addr=1.0.0.0'` (the Pi's address: `cec-ctl -d0 \| grep Physical`) |
 | A Kodi dialog over the picture | e.g. "Воспроизведение плейлиста прервано" after two channel opens at once | `tools/babua screenshot` to read it; `tools/babua key select` presses its OK |
 | babuad log: `JSONRPC.Ping: ... Method not found` | Kodi's start-up is blocked on a modal dialog (it opens the start window before loading its JSON-RPC methods; the TCP server already answers) | `tools/babua screenshot`; `tools/babua key select`. kodi.log lacks `JSONRPC v13.5.0: Successfully initialized` until then. The "no PVR add-on" case is prevented by prekodi. |
 | Kodi in red/maroon "safe mode" | Kodi crashed repeatedly at start | `tools/babua kodi-log`, fix the cause, then `tools/babua restart-kodi` |
+
+## Alerts and what the box already does about them
+
+| Alert | Meaning | The box itself | You |
+|---|---|---|---|
+| `Problem: internet` | No internet; the router may still answer | Nothing to fix locally. babuad keeps retrying the channel once a minute while the TV is on and shows "Нет интернета…" | Usually their ISP; wait, or have them restart the Eero |
+| `Problem: router` | The Pi can't reach their router | Restarts Wi-Fi after ~15 and ~30 min, reboots after ~45 min (at most once per 6 h) | If it persists: Eero down, or the Pi needs unplugging |
+| `Channel down` | A channel failed 4 times (says if there was no internet) | Retries once a minute while the TV is on; at most one alert an hour | `tools/babua check-streams` |
+| `Problem: playlist` … hidden | The daily check found a channel dead | Hides it (numbers don't shift) and brings it back when it answers | Nothing, unless it stays hidden for days |
+| `Problem: screen` | A Kodi message box is up | babuad closes OK boxes after ~2 min; this one is something else | `tools/babua screenshot` |
+| `Problem: babuad` | The daemon is down, crash-looping or logging errors | systemd restarts it | `tools/babua logs babuad` |
+| `Problem: channels` | Kodi has no TV channels | - | IPTV add-on off or Kodi in safe mode: `tools/babua kodi-log` |
+| `Problem: cec` | The TV hasn't answered HDMI-CEC for a day; her remote won't work | - | Anynet+ off, or the HDMI cable moved |
+| `Health check not running` (from the homelab) | The box is online but its health check has stopped | - | `systemctl status babua-health.timer` |
+
+A frozen Pi resets itself: `babua-watchdog.service` turns on systemd's hardware
+watchdog (~15 s).
 
 ## Changing things
 
@@ -56,10 +73,13 @@ truth, and `tools/babua image` reproduces the same box at any time.
 
 ## Disaster recovery
 
-- **Dead SD card / corrupted storage:** flash a new card with
-  `tools/babua image` (or use the spare card left at the house). Everything
-  comes back: config, channels, keys and host key, so the pinned SSH key
-  still matches. Only the "last channel" is lost.
+- **Dead SD card / corrupted storage:** there is no spare card at the house
+  (2026-10). A new card needs a `site/` with current secrets: the provider URL,
+  a fresh Tailscale auth key (the first was one-off), and every SSH key that
+  should work, including the homelab's (`~/.ssh/babua_tv_ed25519.pub` there).
+  With those, `tools/babua image` brings back config, channels and the host
+  key (pinned SSH still matches). It joins Tailscale as a new node: remove the
+  old `babua-tv` in the admin console first so the name stays the same.
 - **Lost SSH key:** `site/authorized_keys` should contain a second key (phone
   or hardware key). Otherwise you'll need a USB keyboard at the box or a new
   image.

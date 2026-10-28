@@ -31,7 +31,8 @@ FIRST_BOOT_ONLY = {
 }
 
 WANTS = {
-    "multi-user.target.wants": ["babuad.service", "babua-vpn.service", "babua-tailscale.service"],
+    "multi-user.target.wants": ["babuad.service", "babua-vpn.service", "babua-tailscale.service",
+                                "babua-watchdog.service"],
     "timers.target.wants": ["babua-playlist.timer", "babua-health.timer",
                             "babua-streamcheck.timer", "babua-reboot.timer"],
     "kodi.service.wants": ["babua-prekodi.service"],

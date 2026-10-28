@@ -1,0 +1,15 @@
+[Unit]
+Description=babua: arm the Pi's hardware watchdog (a frozen box reboots itself)
+# LibreELEC leaves systemd's runtime watchdog off. With it on, systemd keeps the
+# bcm2835 watchdog fed; if the kernel or systemd hangs, the Pi resets itself
+# within ~15 s instead of needing someone to unplug it.
+DefaultDependencies=no
+After=sysinit.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/busctl set-property org.freedesktop.systemd1 /org/freedesktop/systemd1 org.freedesktop.systemd1.Manager RuntimeWatchdogUSec t 15000000
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
