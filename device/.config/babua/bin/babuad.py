@@ -9,6 +9,9 @@
   someone who then picks another input on purpose stays there
 * TV in standby for 5 minutes while a channel plays -> stop and blank, so the
   box doesn't stream all night (the TV doesn't always tell Kodi it went off)
+* after giving up on a channel (e.g. their internet is down), keep trying once a
+  minute for 2 hours while the TV is on, so the picture comes back by itself;
+  Kodi's "playback aborted" boxes from those attempts are closed
 * a stream that dies is retried a few times before giving up
 * playlist reloads are only done while nothing is playing
 * after a clip sent with `babua show`, the channel comes back by itself
@@ -31,6 +34,9 @@ TV_POLL = 10                   # seconds between CEC power-status polls of the T
 TV_OFF_AFTER = 3               # unanswered polls in a row that count as "TV off"
 TV_ON_SETTLE = 5               # after claiming the input, let Kodi's own wake-up resume first
 TV_OFF_STOP = 300              # TV in standby this long while playing -> stop (no streaming all night)
+OPEN_GRACE = 15                # a channel opened this recently is still starting: don't open another
+RECOVER_EVERY = 60             # after giving up, try the channel again this often...
+RECOVER_FOR = 2 * 3600         # ...for this long (an internet outage), while the TV is on
 
 
 class Daemon:
@@ -47,6 +53,9 @@ class Daemon:
         self.tv_silent = 0
         self.standby_since = None  # monotonic time of the first "standby" answer in a row
         self.next_tv_poll = 0.0
+        self.last_open = -OPEN_GRACE  # monotonic time of babuad's last channel open
+        self.recover_until = 0.0   # > now: given up on a channel, retrying once a minute
+        self.message_seen = False  # a Kodi message box was up at the last housekeeping check
 
     # ------------------------------------------------------------------ util
     def save_state(self):
@@ -59,11 +68,18 @@ class Daemon:
         if B.cfg_bool(self.cfg, "BLANK_WHEN_STOPPED", True):
             self.kodi.call("GUI.ActivateScreenSaver")
 
-    def play_last(self, reason):
+    def play_last(self, reason, retry=False):
+        now = time.monotonic()
+        if not retry and now - self.last_open < OPEN_GRACE:
+            # Kodi is still opening the last one (it isn't "playing" yet);
+            # a second open makes it abort one and show an error box
+            B.log(f"not opening again ({reason}): a channel is still starting")
+            return
         channel = self.current_channel or self.kodi.last_channel_id()
         if channel is None:
             B.log("no channels yet; nothing to play")
             return
+        self.last_open = now
         B.log(f"playing channel {channel} ({reason})")
         try:
             self.kodi.play_channel(channel)
@@ -77,6 +93,22 @@ class Daemon:
                     self.kodi.play_channel(fallback)
                 except B.KodiError as exc2:
                     B.log("fallback play failed:", exc2)
+
+    def close_messages(self):
+        """Close Kodi's OK boxes (e.g. "playlist playback aborted" after a
+        failed open): she can't fix anything with them, and they sit on top
+        of the picture. Returns how many were closed."""
+        closed = 0
+        for _ in range(10):        # failed opens can stack several
+            active = self.kodi.call("XBMC.GetInfoBooleans", {"booleans": ["Window.IsActive(okdialog)"]}) or {}
+            if not active.get("Window.IsActive(okdialog)"):
+                break
+            text = self.kodi.call("XBMC.GetInfoLabels", {"labels": ["Control.GetLabel(1)"]}) or {}
+            B.log("closing a Kodi message:", text.get("Control.GetLabel(1)", "?"))
+            self.kodi.call("Input.Select")   # its only button, OK, has focus
+            time.sleep(1)
+            closed += 1
+        return closed
 
     def stop_playback(self):
         for player in self.kodi.call("Player.GetActivePlayers") or []:
@@ -131,6 +163,10 @@ class Daemon:
             if method == "Player.OnAVStart":
                 self.av_started_at = now
                 self.pending = None
+                if self.recover_until:
+                    B.log("picture is back")
+                    self.recover_until = 0.0
+                    self.retries = 0
                 # limit SD card writes: persist at most hourly unless clearing a failure
                 if "failure" in self.state or time.time() - self.state.get("last_ok", 0) > 3600:
                     self.state["last_ok"] = int(time.time())
@@ -151,12 +187,21 @@ class Daemon:
                     pass
                 self.pending = (now + STOP_SETTLE, "resume" if after == "channel" else "stopped", None)
                 return
+            if now < self.recover_until:
+                return             # a failed recovery attempt; "recover" checks back itself
             ended = bool((data or {}).get("end"))
-            kind = "died" if ended else "stopped"
+            # a retry that never showed a picture failed (Kodi reports that as a
+            # plain stop): keep retrying instead of blanking for good
+            failed_retry = self.retries and not self.av_started_at
+            kind = "died" if ended or failed_retry else "stopped"
             self.pending = (now + STOP_SETTLE, kind, None)
 
         elif method == "GUI.OnScreensaverDeactivated":
             self.quiet_until = 0.0
+            if self.standby_since:
+                return             # TV is off: a button press or closed box isn't her watching
+            if self.pending and self.pending[1] in ("retry", "recover"):
+                return             # babuad is about to open it itself
             if B.cfg_bool(self.cfg, "RESUME_ON_WAKE", True) and not self.playing():
                 self.retries = 0
                 self.play_last("woken up")
@@ -173,6 +218,7 @@ class Daemon:
                 self.retries += 1
                 self.av_started_at = 0.0
                 B.log(f"stream ended unexpectedly; retry {self.retries} in {delay}s")
+                self.close_messages()
                 self.pending = (time.monotonic() + delay, "retry", None)
                 return
             self.give_up()
@@ -185,8 +231,20 @@ class Daemon:
             self.retries = 0
             self.play_last("message finished")
             return
+        if kind == "recover":
+            now = time.monotonic()
+            if now >= self.recover_until:
+                B.log("stopped retrying after 2 hours")
+                self.recover_until = 0.0
+                return
+            self.pending = (now + RECOVER_EVERY, "recover", None)
+            if self.standby_since:
+                return             # TV off: try again when it's on (or "TV turned on" will)
+            self.close_messages()
+            self.play_last("trying again after a failure", retry=True)
+            return
         if kind == "retry":
-            self.play_last(f"retry {self.retries}")
+            self.play_last(f"retry {self.retries}", retry=True)
             # A failed open may not produce any event; check back. OnPlay
             # clears this, a new OnStop replaces it.
             self.pending = (time.monotonic() + VERIFY_AFTER, "died", None)
@@ -250,6 +308,10 @@ class Daemon:
         except B.KodiError:
             pass
         B.notify(self.cfg, "Channel down", f"'{name}' failed {len(RETRY_DELAYS) + 1} times in a row.", 3, "tv")
+        self.close_messages()
+        # often their internet, not the channel: keep trying while the TV is on
+        self.recover_until = time.monotonic() + RECOVER_FOR
+        self.pending = (time.monotonic() + RECOVER_EVERY, "recover", None)
 
     # ------------------------------------------------------------------ main
     def session(self):
@@ -291,6 +353,13 @@ class Daemon:
             if time.monotonic() - last_housekeeping > 60:
                 last_housekeeping = time.monotonic()
                 self.maybe_reload_playlist()
+                # any other Kodi OK box left up for two checks (1-2 min)
+                up = (self.kodi.call("XBMC.GetInfoBooleans", {"booleans": ["Window.IsActive(okdialog)"]})
+                      or {}).get("Window.IsActive(okdialog)")
+                if up and self.message_seen:
+                    self.close_messages()
+                    up = False
+                self.message_seen = bool(up)
 
 
 def main():

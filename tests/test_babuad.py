@@ -151,6 +151,8 @@ class BabuadTest(unittest.TestCase):
             mock.patch.object(B, "notify"),
             mock.patch.object(B, "tv_power", return_value=None),
             mock.patch.object(B, "claim_tv_input", return_value=True),
+            mock.patch.object(babuad, "OPEN_GRACE", 0.2),
+            mock.patch.object(babuad, "RECOVER_EVERY", 0.3),
         ]
         for p in patches:
             p.start()
@@ -278,6 +280,47 @@ class BabuadTest(unittest.TestCase):
             for _ in range(4):
                 d.watch_tv()                               # 3 unanswered polls = off
             B.claim_tv_input.assert_called_once()
+
+    def test_second_open_while_one_is_starting_is_skipped(self):
+        d = babuad.Daemon()
+        d.kodi = B.Kodi().connect()
+        self.addCleanup(d.kodi.close)
+        with mock.patch.object(babuad, "OPEN_GRACE", 15), mock.patch.object(d, "playing", return_value=False):
+            d.play_last("TV turned on")
+            d.play_last("woken up")                        # same second: Kodi still opening
+            self.assertEqual(self.kodi.opened(), [12])
+            d.play_last("retry 1", retry=True)             # babuad's own retries aren't held back
+            self.assertEqual(self.kodi.opened(), [12, 12])
+
+    def test_failed_retry_keeps_retrying_instead_of_blanking(self):
+        self.start()
+        self.kodi.handle("Player.Open", {"item": {"channelid": 11}})
+        self.assertTrue(wait_for(lambda: self.daemon.av_started_at > 0))
+        self.daemon.retries = 1                            # a retry is under way...
+        self.daemon.av_started_at = 0.0                    # ...and showed no picture
+        self.kodi.playing = None
+        self.kodi.emit("Player.OnStop", {"item": {"type": "channel", "id": 11}, "end": False})
+        self.assertTrue(wait_for(lambda: self.kodi.opened().count(11) >= 1), "no further retry")
+        self.assertEqual(self.kodi.count("GUI.ActivateScreenSaver"), 0)
+
+    def test_outage_recovery_after_giving_up(self):
+        self.start()
+        self.kodi.broken.add(11)                           # their internet is down
+        self.kodi.emit("Player.OnPlay", {"item": {"type": "channel", "id": 11}})
+        self.kodi.emit("Player.OnStop", {"item": {"type": "channel", "id": 11}, "end": True})
+        self.assertTrue(wait_for(lambda: self.notify.called, timeout=8), "never gave up")
+        self.assertTrue(self.daemon.recover_until > 0)
+        self.kodi.broken.clear()                           # internet back
+        self.assertTrue(wait_for(lambda: self.kodi.playing == 11, timeout=5), "picture never came back")
+        self.assertTrue(wait_for(lambda: self.daemon.recover_until == 0))
+        self.assertEqual(self.notify.call_count, 1)         # one alert, not one per attempt
+
+    def test_wake_while_tv_in_standby_does_not_play(self):
+        self.start()
+        self.daemon.standby_since = 1.0
+        self.kodi.emit("GUI.OnScreensaverDeactivated", {})
+        threading.Event().wait(0.5)
+        self.assertEqual(self.kodi.opened(), [])
 
     def test_wake_with_nothing_played_picks_most_recent(self):
         self.start()
