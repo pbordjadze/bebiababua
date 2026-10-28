@@ -190,8 +190,16 @@ def find(ch, parsed):
     return None
 
 
-def build(sources, channels, parsed, cfg, previous=None):
-    """Return (playlist_text, resolved, missing)."""
+# A channel the daily stream check finds dead is left out of her list until it
+# answers again (re-tested at every rebuild while nothing plays), so nobody
+# lands on a dead channel. Numbers don't shift: each keeps its tvg-chno. If
+# more than this share fail at once it's an outage, not dead channels: hide none.
+HIDE_AT_MOST = 0.25
+
+
+def build(sources, channels, parsed, cfg, previous=None, hidden=()):
+    """Return (playlist_text, resolved, missing). `resolved` includes the
+    channels in `hidden`; the text leaves them out."""
     previous = previous or {}
     out, resolved, missing = [], {}, []
     epg = next((h.get("url-tvg") or h.get("x-tvg-url") for h, _ in parsed.values()
@@ -213,7 +221,8 @@ def build(sources, channels, parsed, cfg, previous=None):
         }
         entry = Entry(ch["name"], src.url, attrs, src.extra + [f"#KODIPROP:{p}" for p in ch.get("kodiprops", [])])
         resolved[ch["name"]] = entry
-        out.append(entry.render())
+        if ch["name"] not in hidden:
+            out.append(entry.render())
     return "\n".join(out) + "\n", resolved, missing
 
 
@@ -242,13 +251,23 @@ def install(args):
     if os.path.exists(B.PLAYLIST_PATH):
         with open(B.PLAYLIST_PATH, encoding="utf-8") as fh:
             previous = {e.name: e for e in parse_m3u(fh.read())[1]}
-    text, resolved, missing = build(sources, channels, parsed, cfg, previous)
-
     status = B.read_json(STATUS_PATH)
+    hidden = set(status.get("hidden", []))
+    text, resolved, missing = build(sources, channels, parsed, cfg, previous, hidden)
+    hidden &= set(resolved)
+    if hidden and not B.kodi_try(lambda k: k.is_playing(), default=False):
+        back = [name for name in sorted(hidden) if probe_ok(resolved[name])]
+        if back:
+            B.log("working again, back in the list:", ", ".join(back))
+            hidden -= set(back)
+            for name in back:
+                status.get("streams_bad", {}).pop(name, None)
+            text, resolved, missing = build(sources, channels, parsed, cfg, previous, hidden)
+    status["hidden"] = sorted(hidden)
     status.update({
         "built_at": int(time.time()),
         "sources": src_status,
-        "channels": len(resolved),
+        "channels": len(resolved) - len(hidden),
         "missing": missing,
         "sources_ok": all(s["ok"] for s in src_status.values()),
     })
@@ -265,11 +284,13 @@ def install(args):
         if text != old:
             B.write_atomic(B.PLAYLIST_PATH, text, 0o600)
             B.write_atomic(B.RELOAD_FLAG, str(int(time.time())))
-            B.log(f"playlist updated: {len(resolved)} channels; reload queued")
+            B.log(f"playlist updated: {len(resolved) - len(hidden)} channels; reload queued")
         status["hash"] = hashlib.sha256(text.encode()).hexdigest()[:12]
     B.write_json(STATUS_PATH, status)
     if missing:
         B.log("missing upstream:", ", ".join(missing))
+    if hidden:
+        B.log("hidden until they work again:", ", ".join(sorted(hidden)))
     return 0
 
 
@@ -286,6 +307,16 @@ def probe(url, timeout=12):
     if head.startswith(b"#EXTM3U") and b"#EXTINF" not in head and b"#EXT-X-STREAM-INF" not in head:
         raise ValueError("HLS playlist without segments")
     return True
+
+
+def probe_ok(entry):
+    ua = next((x.split("=", 1)[1] for x in entry.extra if "http-user-agent=" in x), None)
+    url = entry.url if not ua or "|" in entry.url else f"{entry.url}|User-Agent={ua}"
+    try:
+        probe(url)
+        return True
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def check_streams(args):
@@ -308,11 +339,19 @@ def check_streams(args):
     bad = {k: v for k, v in results.items() if v != "ok"}
     status = B.read_json(STATUS_PATH)
     status["streams_checked_at"] = int(time.time())
-    status["streams_bad"] = bad
+    status["streams_bad"] = dict(bad, **{n: "hidden" for n in status.get("hidden", []) if n not in bad})
+    hide = set(status.get("hidden", [])) | set(bad)
+    total = len(entries) + len(status.get("hidden", []))
+    if len(hide) > max(1, HIDE_AT_MOST * total):
+        B.log(f"{len(hide)} of {total} streams down at once: an outage, hiding none")
+        hide = set(status.get("hidden", []))
+    status["hidden"] = sorted(hide)
     B.write_json(STATUS_PATH, status)
     print(f"{len(entries) - len(bad)}/{len(entries)} streams answer")
     for name, err in bad.items():
         print(f"  DOWN {name}: {err}")
+    if hide:
+        install(args)              # hide the dead ones now, bring back any that answer again
     return 0
 
 

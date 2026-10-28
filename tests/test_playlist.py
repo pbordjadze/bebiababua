@@ -57,6 +57,13 @@ class BuildTest(unittest.TestCase):
         self.assertEqual(missing, ["Missing One"])
         self.assertEqual(resolved["Missing One"].url, "http://old.example/x.m3u8")
 
+    def test_hidden_channels_left_out_without_renumbering(self):
+        text, resolved, _ = P.build(self.sources, self.channels, self.parsed, self.cfg, hidden={"იმედი"})
+        self.assertIn("იმედი", resolved)                          # still resolved, for re-testing
+        names = [e.name for e in P.parse_m3u(text)[1]]
+        self.assertNotIn("იმედი", names)
+        self.assertEqual(resolved["Первый канал"].attrs["tvg-chno"], "3")   # numbers don't shift
+
     def test_explicit_epg_url_suppresses_header(self):
         text, _, _ = P.build(self.sources, self.channels, self.parsed, dict(self.cfg, IPTV_EPG_URL="x"))
         self.assertTrue(text.startswith("#EXTM3U\n"))
@@ -136,6 +143,56 @@ class InstallTest(unittest.TestCase):
         self.assertFalse(status["sources_ok"])
         self.assertIn("using_cache_from", status["sources"]["provider"])
         self.assertNotIn("password=p", str(status))                         # no credentials leak
+
+
+    def names(self):
+        return [e.name for e in P.parse_m3u(read(B.PLAYLIST_PATH))[1]]
+
+    def test_dead_channel_hidden_until_it_answers_again(self):
+        reset()
+        Handler.fail = False
+        nothing_playing = mock.patch.object(B, "kodi_try", lambda fn, default=None: False)
+        with nothing_playing:
+            self.run_install()
+            self.assertIn("НТВ", self.names())
+            ntv_url = next(e.url for e in P.parse_m3u(read(B.PLAYLIST_PATH))[1] if e.name == "НТВ")
+            down = lambda url: (_ for _ in ()).throw(ValueError("down")) if url.split("|")[0] == ntv_url else True
+            with mock.patch.object(P, "probe", side_effect=down):
+                self.run_check()
+            self.assertNotIn("НТВ", self.names())                       # hidden from her list
+            self.assertEqual(B.read_json(P.STATUS_PATH)["hidden"], ["НТВ"])
+            with mock.patch.object(P, "probe", side_effect=down):
+                self.run_install()                                       # 6-hourly rebuild: still dead
+            self.assertNotIn("НТВ", self.names())
+            with mock.patch.object(P, "probe", return_value=True):
+                self.run_install()                                       # answers again
+            self.assertIn("НТВ", self.names())
+            st = B.read_json(P.STATUS_PATH)
+            self.assertEqual(st["hidden"], [])
+            self.assertNotIn("НТВ", st["streams_bad"])
+
+    def test_outage_hides_nothing(self):
+        reset()
+        Handler.fail = False
+        with mock.patch.object(B, "kodi_try", lambda fn, default=None: False):
+            self.run_install()
+            before = self.names()
+            with mock.patch.object(P, "probe", side_effect=ValueError("no route")):
+                self.run_check()
+        self.assertEqual(self.names(), before)
+        self.assertEqual(B.read_json(P.STATUS_PATH)["hidden"], [])
+
+    def run_check(self):
+        conf = tempfile.mkdtemp()
+        with open(os.path.join(conf, "channels.toml"), "w", encoding="utf-8") as fh:
+            fh.write(read(CHANNELS))
+        secrets = os.path.join(conf, "secrets.env")
+        with open(secrets, "w") as fh:
+            fh.write(f"IPTV_M3U_URL=http://127.0.0.1:{self.srv.server_port}/get.php?username=u&password=p\n")
+            fh.write("DIRECT_URL=https://direct.example/s.m3u8\n")
+        args = mock.Mock(config=conf, secrets=secrets)
+        with mock.patch.object(B.time, "sleep"), mock.patch.object(P.time, "sleep"):
+            return P.check_streams(args)
 
 
 class Pi3VerdictTest(unittest.TestCase):

@@ -173,7 +173,9 @@ def check_playlist(cfg):
     if st.get("missing"):
         problems.append("not found upstream: " + ", ".join(st["missing"]))
     if st.get("streams_bad"):
-        problems.append("streams down at last check: " + ", ".join(st["streams_bad"]))
+        problems.append("streams down at last check: " + ", ".join(st["streams_bad"])
+                        + (f" (hidden from her list until they work: {', '.join(st['hidden'])})"
+                           if st.get("hidden") else ""))
     if problems:
         return False, " | ".join(problems)
     return True, f"{st.get('channels', '?')} channels"
