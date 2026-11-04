@@ -1,0 +1,15 @@
+[Unit]
+Description=babua: vitals log once a minute, boot forensics, Kodi log archive
+RequiresMountsFor=/storage
+StartLimitIntervalSec=0
+
+[Service]
+ExecStart=/usr/bin/python3 -u /storage/.config/babua/bin/vitals.py
+Restart=always
+RestartSec=10
+Nice=10
+# on stop it writes one last line saying how it ended (reboot, poweroff, stop)
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

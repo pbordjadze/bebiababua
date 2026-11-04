@@ -15,8 +15,11 @@
 * a stream that dies is retried a few times before giving up
 * playlist reloads are only done while nothing is playing
 * after a clip sent with `babua show`, the channel comes back by itself
+* leaves the TV's last CEC power answer in /run/babua/tv_power (vitals log,
+  soak test), and stops a running soak test before it opens a channel
 """
 
+import json
 import os
 import socket
 import sys
@@ -85,6 +88,7 @@ class Daemon:
             return
         self.last_open = now
         self.av_started_at = 0.0   # no picture from this open yet
+        B.stop_soak("babuad is opening a channel")   # never two provider connections at once
         B.log(f"playing channel {channel} ({reason})")
         try:
             self.kodi.play_channel(channel)
@@ -274,6 +278,10 @@ class Daemon:
         """Switch the TV to the Pi when it goes from off to on; stop playing
         when it has been in standby for a while."""
         power = B.tv_power()
+        try:                                     # for the vitals log and the soak test (/run: RAM)
+            B.write_atomic(B.TV_POWER_PATH, json.dumps({"power": power, "at": int(time.time())}))
+        except OSError:
+            pass
         if power is None:
             self.tv_silent += 1
             if self.tv_silent >= TV_OFF_AFTER:

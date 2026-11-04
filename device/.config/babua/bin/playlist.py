@@ -259,6 +259,10 @@ def config_digest(args):
 
 def install(args):
     B.ensure_dirs()
+    if B.soak_active():
+        # it holds the one provider connection; the installed list stays as is
+        B.log("soak test running; playlist rebuild skipped")
+        return 0
     status = B.read_json(STATUS_PATH)
     digest = config_digest(args)
     if (not getattr(args, "force", False) and os.path.exists(B.PLAYLIST_PATH)
@@ -345,6 +349,9 @@ def check_streams(args):
     if B.kodi_try(lambda k: k.is_playing(), default=False):
         # many providers allow one connection at a time; don't kick grandma off
         B.log("something is playing; skipping stream check")
+        return 0
+    if B.soak_active():
+        B.log("soak test running; skipping stream check")
         return 0
     with open(B.PLAYLIST_PATH, encoding="utf-8") as fh:
         entries = parse_m3u(fh.read())[1]

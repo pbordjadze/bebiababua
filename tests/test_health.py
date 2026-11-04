@@ -13,10 +13,10 @@ class HealthTest(unittest.TestCase):
     def setUp(self):
         reset()
 
-    def run_once(self, **results):
+    def run_once(self, boot_alert=("Booted", "Box started", 2, "electric_plug"), **results):
         defaults = dict(internet=OK, vpn=OK, kodi=OK, power=OK, temp=OK,
                         storage=OK, memory=OK, playlist=OK, player=OK, screen=OK,
-                        router=OK, babuad=OK, channels=OK, cec=OK)
+                        router=OK, babuad=OK, channels=OK, cec=OK, telemetry=OK)
         defaults.update(results)
         sent = []
         with mock.patch.multiple(
@@ -35,6 +35,8 @@ class HealthTest(unittest.TestCase):
             check_babuad=lambda cfg, state: defaults["babuad"],
             check_channels=lambda cfg, state: defaults["channels"],
             check_cec=lambda cfg: defaults["cec"],
+            check_telemetry=lambda cfg: defaults["telemetry"],
+            boot_alert=lambda: boot_alert,
             heartbeat=lambda cfg, problems: None,
             boot_id=lambda: "boot-1",
         ), mock.patch.object(B, "notify", lambda cfg, title, msg, *a: sent.append(title)), \
@@ -50,6 +52,37 @@ class HealthTest(unittest.TestCase):
         self.assertEqual(self.run_once(power=bad), ["Problem: power"])
         self.assertEqual(self.run_once(power=bad), [])            # no repeat while it persists
         self.assertEqual(self.run_once(), ["Recovered: power"])
+
+    def test_boot_alert_waits_for_the_boot_record(self):
+        self.assertEqual(self.run_once(boot_alert=None), [])       # clock not set yet: next run
+        self.assertEqual(self.run_once(boot_alert=("Restarted after power loss", "Power lost ~15:05", 4, "x")),
+                         ["Restarted after power loss"])
+        self.assertEqual(self.run_once(), [])                       # once per boot
+
+    def test_boot_alert_from_the_vitals_record(self):
+        rec = {"cause": "power-loss", "summary": "Power lost ~Tue 03 Nov 15:04 (...)"}
+        with mock.patch.object(H.V, "ensure_boot_record", return_value=rec):
+            title, msg, prio, _ = H.boot_alert()
+        self.assertEqual((title, prio), ("Restarted after power loss", 4))
+        self.assertIn("15:04", msg)
+        with mock.patch.object(H.V, "ensure_boot_record", return_value=None), \
+                mock.patch.object(H, "uptime", return_value=60):
+            self.assertIsNone(H.boot_alert())                      # not ready yet
+        with mock.patch.object(H.V, "ensure_boot_record", return_value=None), \
+                mock.patch.object(H, "uptime", return_value=3600), \
+                mock.patch.object(B, "run", return_value=(0, "up 1:00")):
+            self.assertEqual(H.boot_alert()[0], "Booted")          # give up waiting: plain alert
+
+    def test_telemetry(self):
+        with mock.patch.object(H.V, "journal_persistent", return_value=True):
+            self.assertFalse(H.check_telemetry({})[0])             # no vitals written yet
+            B.append_line(H.V.VITALS_LOG, "{}")
+            ok, detail = H.check_telemetry({})
+            self.assertTrue(ok, detail)
+        with mock.patch.object(H.V, "journal_persistent", return_value=False):
+            ok, detail = H.check_telemetry({})
+        self.assertFalse(ok)
+        self.assertIn("journal", detail)
 
     def test_dialog_left_on_screen(self):
         state = {}

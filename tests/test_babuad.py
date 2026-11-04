@@ -128,6 +128,10 @@ class FakeKodi:
 
     def close(self):
         for c in self.clients:
+            try:
+                c.shutdown(socket.SHUT_RDWR)     # wakes the reader; close() alone leaves the client connected
+            except OSError:
+                pass
             c.close()
         self.srv.close()
 
@@ -433,6 +437,26 @@ class BabuadTest(unittest.TestCase):
         self.kodi.handle("Player.Stop", {})
         self.assertTrue(wait_for(lambda: len(self.daemon_reload_calls()) == n + 2))
         self.assertFalse(os.path.exists(B.RELOAD_FLAG))
+
+    def test_soak_test_stopped_before_opening_a_channel(self):
+        order = []
+        with mock.patch.object(B, "stop_soak", side_effect=lambda reason: order.append("stop_soak")):
+            self.start()
+            self.kodi.handle("Player.Open", {"item": {"channelid": 12}})
+            self.kodi.handle("Player.Stop", {})
+            self.assertTrue(wait_for(lambda: self.kodi.count("GUI.ActivateScreenSaver") == 1))
+            self.kodi.emit("GUI.OnScreensaverDeactivated", {})            # TV on: babuad resumes
+            self.assertTrue(wait_for(lambda: self.kodi.playing == 12))
+        self.assertEqual(order, ["stop_soak"])
+
+    def test_tv_power_published_for_vitals_and_soak(self):
+        d = babuad.Daemon()
+        with mock.patch.object(B, "tv_power", return_value="standby"):
+            d.watch_tv()
+        self.assertEqual(B.read_tv_power(), "standby")
+        with mock.patch.object(B, "tv_power", return_value=None):
+            d.watch_tv()
+        self.assertEqual(B.read_tv_power(), "silent")
 
 
 if __name__ == "__main__":

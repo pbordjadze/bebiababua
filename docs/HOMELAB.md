@@ -127,6 +127,10 @@ diagnosis without the `site/` secrets:
 Useful checks:
 
 ```sh
+babua-tv boots -v            # why it last (re)started, what it was doing; the journal before it
+babua-tv vitals -2h          # once-a-minute vitals (power, Wi-Fi, pings, Kodi, the TV's state)
+babua-tv soak status         # the overnight stream soak test; `soak report` for results
+babua-tv ssh 'journalctl -b -1 -n 200'   # the journal survives reboots since 2026-11-04
 babua-tv ssh 'iw dev wlan0 link; iw dev wlan0 station dump | grep -E "tx failed|signal"'
 babua-tv ssh 'ping -c 40 -i 0.5 ROUTER_IP | tail -2'    # their router; loss = Wi-Fi
 babua-tv ssh 'cec-ctl -d0 --to 0 --give-device-power-status; cec-ctl -d0 --to 0 --request-active-source'

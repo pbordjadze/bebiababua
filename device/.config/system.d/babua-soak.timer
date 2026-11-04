@@ -1,0 +1,10 @@
+[Unit]
+Description=babua: stream soak test on the nights in soak/schedule.json (`babua soak status`)
+
+[Timer]
+# 01:00; the later two only start a night that hasn't run because someone was watching
+OnCalendar=*-*-* 01,02,03:00:00
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

@@ -19,6 +19,7 @@ import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import babua_lib as B  # noqa: E402
+import vitals as V  # noqa: E402
 
 STATE_PATH = os.path.join(B.STATE_DIR, "health.json")
 PLAYLIST_STATUS = os.path.join(B.STATE_DIR, "playlist.json")
@@ -320,6 +321,37 @@ def check_screen(cfg, state):
     return False, f"dialog on screen: {text}"[:300]
 
 
+def check_telemetry(cfg):
+    """The vitals log and the persistent journal: what tells us, after the
+    next power cut, what the box was doing."""
+    try:
+        age = time.time() - os.path.getmtime(V.VITALS_LOG)
+    except OSError:
+        age = None
+    problems = []
+    if age is None or age > 180:
+        problems.append("vitals log not written " + ("yet" if age is None else f"for {int(age // 60)} min")
+                        + " (babua-vitals)")
+    if not V.journal_persistent():
+        problems.append("journal not kept across reboots (/var/log not on the SD card)")
+    if problems:
+        return False, "; ".join(problems)
+    return True, f"vitals {int(age)}s ago, journal persistent"
+
+
+def boot_alert():
+    """The once-per-boot alert: why the box started and what it was doing
+    before (vitals' boot record). None: not ready yet, ask again next run."""
+    rec = V.ensure_boot_record()
+    if rec is None and uptime() < 900:
+        return None                # the clock isn't set yet; the record follows within minutes
+    alert = V.boot_alert(rec)
+    if alert:
+        return alert
+    rc, up = B.run(["uptime"])
+    return "Booted", f"Box started ({up})", 2, "electric_plug"
+
+
 def heartbeat(cfg, problems):
     url = cfg.get("HEARTBEAT_URL")
     if not url:
@@ -365,6 +397,7 @@ def main():
         "babuad": lambda: check_babuad(cfg, state),
         "channels": lambda: check_channels(cfg, state),
         "cec": lambda: check_cec(cfg),
+        "telemetry": lambda: check_telemetry(cfg),
     }
     results = {}
     for name, fn in checks.items():
@@ -381,11 +414,16 @@ def main():
     now = int(time.time())
     alerts = []                    # sent after the state is saved, so a run killed mid-send can't repeat them
     if state.get("boot_id") != boot_id():
-        last = state.get("last_run")
-        gap = f"; previous check {time.strftime('%Y-%m-%d %H:%M', time.localtime(last))}" if last else ""
-        rc, up = B.run(["uptime"])
-        alerts.append(("Booted", f"Box started ({up}){gap}", 2, "electric_plug"))
-        state["boot_id"] = boot_id()
+        try:
+            alert = boot_alert()
+        except Exception as exc:  # noqa: BLE001
+            B.log("boot alert failed:", repr(exc))
+            alert = ("Booted", "Box started", 2, "electric_plug")
+        if alert:                  # else: not ready, the next run sends it
+            last = state.get("last_run")
+            gap = f" (previous health check {time.strftime('%a %H:%M', time.localtime(last))})" if last else ""
+            alerts.append((alert[0], alert[1] + gap, *alert[2:]))
+            state["boot_id"] = boot_id()
 
     # internet down makes everything downstream noisy; report only that
     offline = not results["internet"][0]

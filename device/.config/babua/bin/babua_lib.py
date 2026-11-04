@@ -8,6 +8,7 @@ the box is unattended, so a crash means a visit.
 import json
 import os
 import re
+import signal
 import socket
 import subprocess
 import sys
@@ -24,6 +25,8 @@ SCREENSHOT_DIR = os.environ.get("BABUA_SCREENSHOT_DIR", "/storage/screenshots")
 
 PLAYLIST_PATH = os.path.join(STATE_DIR, "playlist.m3u")
 RELOAD_FLAG = os.path.join(RUN_DIR, "reload_pending")
+TV_POWER_PATH = os.path.join(RUN_DIR, "tv_power")     # babuad's last CEC answer from the TV (JSON)
+SOAK_FLAG = os.path.join(RUN_DIR, "soak.json")        # a soak test holds a provider connection
 QUIET_FLAG = os.path.join(STATE_DIR, "quiet_boot")
 AFTER_MEDIA = os.path.join(RUN_DIR, "after_media")   # "channel" | "blank", written by `babua show`
 MEDIA_DIR = os.environ.get("BABUA_MEDIA_DIR", "/storage/babua-media")
@@ -130,6 +133,131 @@ def read_json(path, default=None):
 
 def write_json(path, obj, mode=0o644):
     write_atomic(path, json.dumps(obj, indent=1, sort_keys=True, ensure_ascii=False) + "\n", mode)
+
+
+def append_line(path, line):
+    """Append one line and fsync it, so it survives a power cut a second later."""
+    new = not os.path.exists(path)
+    if new:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+    try:
+        os.write(fd, (line.rstrip("\n") + "\n").encode("utf-8"))
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    if new:
+        fsync_dir(os.path.dirname(path))
+
+
+def fsync_dir(path):
+    try:
+        fd = os.open(path, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
+
+# --------------------------------------------------------------------------
+# this boot
+
+
+def boot_id():
+    try:
+        with open("/proc/sys/kernel/random/boot_id") as fh:
+            return fh.read().strip()
+    except OSError:
+        return "unknown"
+
+
+def uptime():
+    try:
+        with open("/proc/uptime") as fh:
+            return float(fh.read().split()[0])
+    except (OSError, ValueError):
+        return 0.0
+
+
+# The Pi has no clock that runs while it's off: it starts at LibreELEC's build
+# date until connman's NTP sets it (~20 s after boot). Any time before this is
+# that unset clock. (systemd-timesyncd isn't used, so its flag never appears.)
+CLOCK_SANE_AFTER = 1790000000      # 2026-09-21
+
+
+def clock_synced():
+    return time.time() > CLOCK_SANE_AFTER or os.path.exists("/run/systemd/timesync/synchronized")
+
+
+def read_tv_power(max_age=60):
+    """The TV's power state as babuad last heard it over CEC (it asks every
+    10 s): "on", "standby", "to-on", "to-standby", "silent" (no answer), or
+    None when babuad hasn't said anything for max_age seconds. Reading it
+    sends nothing to the TV."""
+    try:
+        with open(TV_POWER_PATH, encoding="utf-8") as fh:
+            st = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if time.time() - st.get("at", 0) > max_age:
+        return None
+    return st.get("power") or "silent"
+
+
+# --------------------------------------------------------------------------
+# soak test (soak.py): it holds a provider connection, so everything else that
+# would open one (babuad, the playlist rebuild, the stream check) checks this.
+
+
+def _running(pid):
+    try:
+        with open(f"/proc/{pid}/stat") as fh:
+            return fh.read().rsplit(")", 1)[1].split()[0] != "Z"
+    except (OSError, IndexError):
+        return False
+
+
+def soak_active():
+    """The running soak test's flag ({"pid", "channel", ...}) or None."""
+    st = read_json(SOAK_FLAG)
+    pid = st.get("pid")
+    if not pid or not _running(pid):
+        return None
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as fh:
+            if b"soak" not in fh.read():
+                return None
+    except OSError:
+        return None
+    return st
+
+
+def stop_soak(reason, wait=3.0):
+    """Stop a running soak test and wait for its connection to close. Returns
+    True if one was running."""
+    st = soak_active()
+    if not st:
+        return False
+    log("stopping the soak test:", reason)
+    try:
+        write_atomic(SOAK_FLAG + ".stop", reason)
+        os.kill(st["pid"], signal.SIGTERM)
+    except OSError:
+        return True
+    deadline = time.monotonic() + wait
+    while time.monotonic() < deadline:
+        if not _running(st["pid"]):
+            return True
+        time.sleep(0.1)
+    try:
+        os.kill(st["pid"], signal.SIGKILL)   # the kernel closes its socket
+    except OSError:
+        pass
+    return True
 
 
 # --------------------------------------------------------------------------

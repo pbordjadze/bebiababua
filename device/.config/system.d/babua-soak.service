@@ -1,0 +1,9 @@
+[Unit]
+Description=babua: overnight stream soak test (only on nights listed in soak/schedule.json)
+After=network-online.target
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/python3 -u /storage/.config/babua/bin/soak.py scheduled
+Nice=5
+TimeoutStopSec=15

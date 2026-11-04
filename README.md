@@ -19,6 +19,7 @@ with one command, and a flashable image I can rebuild at any time.
                           │  IPTV Simple ◄── local playlist ◄── babua playlist.py ◄── provider M3U
                           │  babuad      (TV off → stop/blank, TV on/any key → resume, retries)
                           │  health      (5 min: net, VPN, Kodi, power, playlist → ntfy + heartbeat)
+                          │  vitals      (1 min: power, Wi-Fi, Kodi, TV → SD card; why it last restarted)
                           └─ Tailscale (outbound only) ──► my tailnet: SSH, ntfy, uptime monitor
 ```
 
@@ -72,6 +73,7 @@ tools/babua say "Привет, бабушка!"
 tools/babua show photo.jpg    # or clip.mp4 / a URL: plays on the TV, then the channel comes back
 $EDITOR config/channels.toml && tools/babua deploy    # change channels (or any config)
 tools/babua logs [-f]         # babua units + Kodi journal
+tools/babua vitals -2h        # the box's once-a-minute vitals; `boots` says why it last restarted
 tools/babua update 12.2.2     # stage a LibreELEC update; installs on next (weekly) reboot
 ```
 
@@ -105,6 +107,13 @@ More situations and their fixes are in [docs/RUNBOOK.md](docs/RUNBOOK.md).
     under-voltage, temperature, disk, memory and the playlist. It sends ntfy
     alerts only on problem/recovery transitions and queues them while offline.
     It also pings the heartbeat URL.
+  - `vitals.py` writes a line a minute (power, Wi-Fi, pings, Kodi, the TV's
+    power state) and fsyncs it, so the minute before a power cut survives. On
+    each boot it records why the box started (reset register, clean shutdown
+    or not) and what it was doing when last alive; health's boot alert says so.
+    The journal is kept on the SD card too.
+  - `soak.py` is an overnight test of the provider's streams (network only,
+    nothing on the TV); it stops the moment anyone might be watching.
   - There's a weekly reboot (Monday 04:30). It's skipped while something is
     playing, and it never starts a channel or wakes the TV afterwards.
 - Remote keymap: Back can never leave the TV screens; Stop and Pause are

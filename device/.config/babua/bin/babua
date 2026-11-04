@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """On-box admin commands (run over SSH; tools/babua wraps these).
 
-  babua status              health, playlist, VPN, what is playing
+  babua status              health, playlist, VPN, what is playing, last boot
   babua health              run the health checks now (prints, no alerts)
+  babua vitals [N|-2h|HH:MM|YYYY-MM-DD HH:MM] [--json]
+                            the once-a-minute vitals log (default: last 30 lines)
+  babua boots [N] [-v]      why the box (re)started, what it was doing before (-v: journal)
+  babua soak status|report [DIR]|run ...|schedule DATE ...|unschedule DATE|stop
+                            overnight stream soak test (soak.py --help)
   babua playlist [...]      rebuild the channel list now (args go to playlist.py)
   babua check-streams       probe every stream (skipped while playing)
   babua play <number>       switch the TV to channel <number>
@@ -23,6 +28,7 @@
 
 import glob
 import hashlib
+import json
 import os
 import subprocess
 import sys
@@ -30,6 +36,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import babua_lib as B  # noqa: E402
+import vitals as V  # noqa: E402
 
 BIN = os.path.dirname(os.path.abspath(__file__))
 
@@ -72,8 +79,113 @@ def cmd_status(args):
         print(f"playlist: {pl.get('channels')} channels, built {time.ctime(pl.get('built_at', 0))}, missing: {pl.get('missing') or '-'}")
     with open("/etc/os-release") as fh:
         print("os:      ", next((l.split("=", 1)[1].strip().strip('"') for l in fh if l.startswith("PRETTY_NAME")), "?"))
+    rec = V.last_boot_record()
+    if rec and rec.get("boot_id") == B.boot_id():
+        print("boot:    ", rec.get("summary"))
+    last = V.read_records(limit=1)
+    if last:
+        print("vitals:  ", format_vitals(last[-1]))
+    soak = B.soak_active()
+    if soak:
+        print("soak:     running,", soak.get("channel"))
     print()
     return sh(sys.executable, os.path.join(BIN, "health.py"), "--print")
+
+
+def format_vitals(r):
+    """One vitals record on one line."""
+    if r.get("event") and r["event"] != "start":
+        head = f"== {r['event']} =="
+    else:
+        head = "== start ==" if r.get("event") else ""
+    k = r.get("kodi") or {}
+    if k.get("playing"):
+        kodi = f"PLAY {k.get('ch') or ''} {k['playing']}".replace("  ", " ")
+        extra = [f"cache {k['cache']}%" if k.get("cache") else "",
+                 f"buffering {k['caching_s']}s" if k.get("caching_s") else "",
+                 f"frozen {k['frozen_s']}s" if k.get("frozen_s") else ""]
+        kodi += " " + " ".join(x for x in extra if x) if any(extra) else ""
+    elif k.get("up") is False or k.get("down_s"):
+        kodi = "kodi DOWN"
+    else:
+        kodi = "idle" + (" (blank)" if k.get("screensaver") else "")
+    w = r.get("wifi") or {}
+    wifi = (f"wifi {w.get('sig', '?')}dBm {w.get('tx_mbit', '?')}M ap ..{w.get('ap', '?')[-5:]}"
+            + (f" fail+{w['tx_failed']}" if w.get("tx_failed") else "")) if w.get("connected") else "wifi DOWN"
+    def png(p):
+        if not p:
+            return "-"
+        return f"{p['ms']:.0f}ms" + (f"/{p['loss']:.0f}%" if p.get("loss") else "") if p.get("ms") is not None else "LOST"
+    thr = ",".join(f.replace(" since boot", "*").replace(" now", "!") for f in r.get("thr_flags") or []) or "ok"
+    parts = [
+        time.strftime("%a %H:%M", time.localtime(r.get("ts", 0))) + ("?" if r.get("clock") else ""),
+        f"up {r.get('up', 0) // 3600}h{r.get('up', 0) % 3600 // 60:02d}",
+        f"{r.get('temp')}C {r.get('volts')}V {r.get('arm_mhz')}MHz pwr {thr}" + (f" UV {r['uv_s']}s" if r.get("uv_s") else ""),
+        f"load {(r.get('load') or ['?'])[0]} cpu {r.get('cpu_pct', '?')}% mem {r.get('mem_mb')}M kodi {r.get('kodi_mb', '?')}M",
+        wifi, f"gw {png(r.get('ping_gw'))} net {png(r.get('ping_inet'))} rx {r.get('rx_kbps', '?')}k",
+        f"ts {r.get('tailscale') or '?'}", f"TV {r.get('tv')} hdmi {r.get('hdmi') or '?'}", kodi,
+    ]
+    if r.get("soak"):
+        parts.append(f"SOAK {r['soak']}")
+    return (head + " " if head else "") + " | ".join(parts)
+
+
+def parse_since(text):
+    """'-2h', '-30m', 'HH:MM' (today, or yesterday if that's ahead), 'YYYY-MM-DD HH:MM' -> epoch"""
+    now = time.time()
+    if text.startswith("-") and text[-1] in "hmd":
+        return now - float(text[1:-1]) * {"h": 3600, "m": 60, "d": 86400}[text[-1]]
+    if len(text) <= 5 and ":" in text:
+        hh, mm = (int(x) for x in text.split(":"))
+        lt = time.localtime(now)
+        ts = time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, hh, mm, 0, 0, 0, -1))
+        return ts if ts <= now else ts - 86400
+    return time.mktime(time.strptime(text, "%Y-%m-%d %H:%M"))
+
+
+def cmd_vitals(args):
+    as_json = "--json" in args
+    args = [a for a in args if a != "--json"]
+    spec = " ".join(args)
+    if spec and spec.isdigit():
+        records = V.read_records(limit=int(spec))
+    elif spec:
+        records = V.read_records(since=parse_since(spec))
+    else:
+        records = V.read_records(limit=30)
+    for r in records:
+        print(json.dumps(r, ensure_ascii=False) if as_json else format_vitals(r))
+    if not records:
+        print("no vitals yet")
+    return 0
+
+
+def cmd_boots(args):
+    verbose = "-v" in args
+    nums = [a for a in args if a.isdigit()]
+    recs = V.read_boot_records(int(nums[0]) if nums else 10)
+    if not recs:
+        print("no boot records yet")
+    for rec in recs:
+        print(f"{rec.get('booted', '?')}  boot {rec.get('boot')}  reset {rec.get('reset')} ({rec.get('rsts')})"
+              f"  -> {V.CAUSE_TEXT.get(rec.get('cause'), rec.get('cause'))}")
+        print("   ", rec.get("summary"))
+        prev = rec.get("prev")
+        if prev:
+            print(f"    previous boot {prev.get('boot')}: last vitals {prev.get('last_seen_iso')}, "
+                  f"up {prev.get('up_s', 0) // 3600} h, ended: {prev.get('end')}; {prev.get('doing')}; "
+                  f"HDMI {prev.get('hdmi')}; power flags {prev.get('thr_flags') or 'none'}; temp {prev.get('temp')}C")
+        if verbose:
+            tail = rec.get("journal_tail") or []
+            print("    previous boot's last journal lines:" if tail else "    (no journal from the previous boot)")
+            for line in tail:
+                print("     ", line)
+        print()
+    return 0
+
+
+def cmd_soak(args):
+    return sh(sys.executable, os.path.join(BIN, "soak.py"), *(args or ["status"]))
 
 
 def cmd_health(args):
@@ -258,6 +370,9 @@ def idle_reboot(force=False):
     if not force and B.kodi_try(lambda k: k.is_playing(), default=False):
         print("something is playing; not rebooting (use --force)")
         return 1
+    if not force and B.soak_active():
+        print("a soak test is running; not rebooting (`babua soak stop`, or --force)")
+        return 1
     open(B.QUIET_FLAG, "w").close()   # don't start a channel nobody watches
     B.log("rebooting")
     return sh("systemctl", "reboot")
@@ -284,8 +399,15 @@ def cmd_post_deploy(args):
     """Called by `tools/babua deploy` right after new files were unpacked."""
     old_wg = args[0] if args else ""
     sh("systemctl", "daemon-reload")
-    for timer in ("babua-playlist", "babua-health", "babua-streamcheck", "babua-reboot"):
+    for timer in ("babua-playlist", "babua-health", "babua-streamcheck", "babua-reboot", "babua-soak"):
         sh("systemctl", "start", f"{timer}.timer")
+    sh("systemctl", "restart", "babua-vitals")
+    if not V.journal_persistent():
+        # LibreELEC binds /storage/.cache/log onto /var/log at boot once
+        # .cache/journald.conf.d/00_settings.conf exists; do it now as well
+        sh("systemctl", "start", "var-log.mount")
+        sh("systemctl", "restart", "systemd-journald")
+        sh("journalctl", "--flush")
     sh("systemctl", "restart", "iptables")
     sh(sys.executable, os.path.join(BIN, "prekodi.py"))
     sh("systemctl", "restart", "babuad")      # re-applies Kodi settings on connect
@@ -325,6 +447,9 @@ COMMANDS = {
     "restart-kodi": cmd_restart_kodi,
     "status": cmd_status,
     "health": cmd_health,
+    "vitals": cmd_vitals,
+    "boots": cmd_boots,
+    "soak": cmd_soak,
     "playlist": cmd_playlist,
     "check-streams": cmd_check_streams,
     "play": cmd_play,

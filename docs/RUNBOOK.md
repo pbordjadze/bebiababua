@@ -23,6 +23,69 @@ shell on the box, where the same tools are on the PATH as `babua ...`.
 | babuad log: `JSONRPC.Ping: ... Method not found` | Kodi's start-up is blocked on a modal dialog (it opens the start window before loading its JSON-RPC methods; the TCP server already answers) | `tools/babua screenshot`; `tools/babua key select`. kodi.log lacks `JSONRPC v13.5.0: Successfully initialized` until then. The "no PVR add-on" case is prevented by prekodi. |
 | Kodi in red/maroon "safe mode" | Kodi crashed repeatedly at start | `tools/babua kodi-log`, fix the cause, then `tools/babua restart-kodi` |
 
+## "It died" / "It only works for a while": what was it doing?
+
+The box keeps its own records on the SD card, so after a restart you can see
+what happened before it:
+
+```sh
+tools/babua boots            # each boot: why it started, what it was doing when last alive
+tools/babua boots 3 -v       # ... with the previous boot's last journal lines
+tools/babua vitals -3h       # once-a-minute vitals; also `vitals 60`, `vitals 14:30`, `vitals '2026-11-03 14:30'`
+tools/babua ssh 'journalctl -b -1 -n 200'   # the previous boot's journal (kept since 2026-11-04)
+tools/babua ssh 'ls /storage/.cache/babua/kodi-logs'   # every earlier kodi.log, gzipped
+```
+
+Reading a boot record:
+
+- **reset** is the Pi's reset register at boot (`vcgencmd get_rsts`):
+  `power-on` (0x1000) means the power was cut or dipped; `watchdog` (0x20
+  set) means a reboot, or a hang that the hardware watchdog ended.
+- **end** is how the previous boot's vitals log ended: `reboot`/`poweroff`
+  is a clean shutdown; "stopped mid-run" means it just stopped.
+- So: stopped mid-run + power-on = **power lost**; stopped mid-run + watchdog =
+  **froze**; a clean end = a planned restart.
+- "TV on before, standby at return": the TV lost power too (a switched outlet,
+  a breaker, an outage). "TV on before, on at return": only the Pi did (its
+  supply or cable). Under-voltage flags in the last minutes point at the
+  supply.
+
+A vitals line: time, uptime, temperature, core volts, ARM clock, power flags
+(`!` now, `*` since boot; `UV 10s` = under-voltage seen in that minute), load,
+CPU, free memory, Kodi's memory, Wi-Fi signal, bitrate, access point (last
+bytes of its MAC), failed transmits, ping to the router and to 1.1.1.1, network
+receive rate, Tailscale, the TV's power state (from babuad's CEC polls; nothing
+is sent to the TV for this), HDMI, and what Kodi plays (with seconds spent
+buffering or frozen in that minute). `--json` shows everything.
+
+## Stream soak test
+
+`soak.py` plays channels the way Kodi would (HLS playlist and every
+segment) but throws the data away: nothing on the TV, Kodi not involved. It
+logs bytes, bitrate per minute, where a player would have stalled, HTTP
+errors, drops (with how long the connection had lasted: a provider that cuts
+after a fixed time shows up as drops at the same age) and reconnects. About
+1.8 GB an hour per channel (~4 Mbit/s).
+
+It uses the one provider connection only while nobody can be watching: it
+won't start if the TV is on or something plays, and stops for the rest of the
+night the moment Kodi starts playing, the screen wakes (TV on, any key) or
+babuad sees the TV on; babuad also stops it before opening a channel, and the
+playlist rebuild, the stream check and `babua reboot` wait while it runs.
+
+```sh
+tools/babua soak status                  # running? which nights are scheduled
+tools/babua soak report                  # the latest run's summary (or: soak report 2026-11-05_0100)
+tools/babua soak schedule 2026-11-07 --channels 2,1,3 --first-min 90 --each-min 15 --until 06:25 --budget-gb 9
+tools/babua soak unschedule 2026-11-07
+tools/babua soak stop
+```
+
+`babua-soak.timer` fires at 01:00, 02:00 and 03:00; it runs a night listed in
+`soak/schedule.json` (the date is the morning it runs) once, at the first of
+those hours when nobody's watching. Results: `/storage/.cache/babua/soak/<date>_<time>/`
+(`events.jsonl`, `summary.txt`; no URLs).
+
 ## Alerts and what the box already does about them
 
 | Alert | Meaning | The box itself | You |
@@ -35,6 +98,10 @@ shell on the box, where the same tools are on the PATH as `babua ...`.
 | `Problem: babuad` | The daemon is down, crash-looping or logging errors | systemd restarts it | `tools/babua logs babuad` |
 | `Problem: channels` | Kodi has no TV channels | - | IPTV add-on off or Kodi in safe mode: `tools/babua kodi-log` |
 | `Problem: cec` | The TV hasn't answered HDMI-CEC for a day; her remote won't work | - | Anynet+ off, or the HDMI cable moved |
+| `Restarted after power loss` | The box came back after its power was cut (reset register: power-on, log stopped mid-run). The message says when it was last alive, what played, and the TV before/after | - | `tools/babua boots -v`. TV off at return too: a switch, breaker or outage cut both. Only the Pi: its supply or cable |
+| `Restarted after a hang` | The hardware watchdog reset a frozen box | - | `tools/babua boots -v` (the journal before it) |
+| `Booted` | A clean restart (weekly reboot, `babua reboot`) or no record from before | - | - |
+| `Problem: telemetry` | The vitals log stopped, or the journal isn't on the SD card | - | `tools/babua logs babua-vitals`; `mount \| grep /var/log` |
 | `Health check not running` (from the homelab) | The box is online but its health check has stopped | - | `systemctl status babua-health.timer` |
 
 A frozen Pi resets itself: `babua-watchdog.service` turns on systemd's hardware
@@ -89,10 +156,16 @@ truth, and `tools/babua image` reproduces the same box at any time.
 
 ```
 /storage/.config/babua/        babua.conf, channels.toml, secrets.env (0600), bin/
-/storage/.cache/babua/         playlist.m3u, playlist.json, health.json, player.json, outbox.jsonl
+/storage/.cache/babua/         playlist.m3u, playlist.json, health.json, player.json, outbox.jsonl,
+                               boots.jsonl (one record per boot)
+/storage/.cache/babua/vitals/  vitals.jsonl (a line a minute), vitals-*.jsonl.gz (older, 100 MB cap)
+/storage/.cache/babua/kodi-logs/  every earlier kodi.log, gzipped (last 30)
+/storage/.cache/babua/soak/    schedule.json, <date>_<time>/events.jsonl + summary.txt
+/storage/.cache/log/journal/   the journal, kept across boots (200 MB cap; /var/log is bound here)
+/storage/.cache/journald.conf.d/00_settings.conf   turns that on (LibreELEC's own switch)
 /storage/.config/system.d/     babua*.service / *.timer
 /storage/.config/wireguard/    babua.config (connman WireGuard provider)
 /storage/.config/iwd/          main.conf (Wi-Fi: 2.4 GHz only), read via system.d/iwd.service.d/
 /storage/.kodi/temp/kodi.log   Kodi log
-journalctl -u babuad -u babua-health -u babua-playlist -u kodi
+journalctl -u babuad -u babua-health -u babua-playlist -u babua-vitals -u kodi   (-b -1: the boot before)
 ```
