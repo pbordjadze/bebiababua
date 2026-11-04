@@ -107,6 +107,13 @@ those hours when nobody's watching. Results: `/storage/.cache/babua/soak/<date>_
 A frozen Pi resets itself: `babua-watchdog.service` turns on systemd's hardware
 watchdog (~15 s).
 
+The weekly reboot (Monday 04:30, `babua-reboot.timer`) is skipped, until the
+next Monday, if something plays, the TV is on (or babuad can't say), a soak
+test runs, the box has been up less than a day, or the clock isn't set. It
+never starts a channel afterwards. Until 2026-11-04 it never ran: it waited
+for a systemd-timesyncd flag, and LibreELEC sets the clock with connman.
+`tools/babua ssh 'journalctl -u babua-reboot'` shows what it did.
+
 ## Changing things
 
 Change config, not the box. Edit the file, then run `tools/babua deploy`. It

@@ -115,7 +115,8 @@ More situations and their fixes are in [docs/RUNBOOK.md](docs/RUNBOOK.md).
   - `soak.py` is an overnight test of the provider's streams (network only,
     nothing on the TV); it stops the moment anyone might be watching.
   - There's a weekly reboot (Monday 04:30). It's skipped while something is
-    playing, and it never starts a channel or wakes the TV afterwards.
+    playing, the TV is on or a soak test runs, and it never starts a channel
+    or wakes the TV afterwards.
 - Remote keymap: Back can never leave the TV screens; Stop and Pause are
   ignored, because a frozen picture looks "broken" to grandma.
 

@@ -22,8 +22,8 @@
                             turn the tunnel on from the box (e.g. from a phone)
   babua update <version>    stage a LibreELEC update (e.g. 12.2.2) for the next reboot
   babua restart-kodi [--force]  restart Kodi (applies CEC settings)
-  babua reboot [--force]    reboot now unless something is playing
-  babua maintenance-reboot  weekly reboot (skipped while playing)
+  babua reboot [--force]    reboot now unless something plays, the TV is on or a soak test runs
+  babua maintenance-reboot  weekly reboot (skipped then, until the next week)
 """
 
 import glob
@@ -366,12 +366,25 @@ def cmd_update(args):
     return 0
 
 
+def reboot_blocker():
+    """Why the box mustn't reboot now (someone may be watching), or None."""
+    if B.kodi_try(lambda k: k.is_playing(), default=False):
+        return "something is playing"
+    tv = B.read_tv_power()
+    if tv in ("on", "to-on"):
+        return f"the TV is {tv}"
+    if tv is None:
+        return "babuad hasn't reported the TV's state, so it may be on"
+    if B.soak_active():
+        return "a soak test is running (`babua soak stop`)"
+    return None
+
+
 def idle_reboot(force=False):
-    if not force and B.kodi_try(lambda k: k.is_playing(), default=False):
-        print("something is playing; not rebooting (use --force)")
-        return 1
-    if not force and B.soak_active():
-        print("a soak test is running; not rebooting (`babua soak stop`, or --force)")
+    why = None if force else reboot_blocker()
+    if why:
+        print(f"{why}; not rebooting (use --force)")
+        B.log("reboot skipped:", why)
         return 1
     open(B.QUIET_FLAG, "w").close()   # don't start a channel nobody watches
     B.log("rebooting")
@@ -383,14 +396,16 @@ def cmd_reboot(args):
 
 
 def cmd_maintenance_reboot(args):
+    """Monday 04:30 (babua-reboot.timer). Skipped, until next week, while
+    anything says someone may be watching (reboot_blocker)."""
     cfg = B.load_config()
     if not B.cfg_bool(cfg, "WEEKLY_REBOOT", True):
         return 0
-    with open("/proc/uptime") as fh:
-        uptime = float(fh.read().split()[0])
     # Guards against a reboot loop if the clock is wrong (the Pi has no RTC).
-    if uptime < 86400 or not os.path.exists("/run/systemd/timesync/synchronized"):
-        B.log("maintenance reboot skipped: uptime < 1 day or clock not synced")
+    # Not systemd-timesyncd's flag: LibreELEC sets the clock with connman, so
+    # that flag never appears and this reboot never ran (until 2026-11-04).
+    if B.uptime() < 86400 or not B.clock_synced():
+        B.log("maintenance reboot skipped: uptime < 1 day or clock not set")
         return 0
     return idle_reboot()
 

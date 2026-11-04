@@ -67,7 +67,10 @@ class FakeKodi:
             with self.lock:
                 self.calls.append((req["method"], req.get("params")))
             result = self.handle(req["method"], req.get("params") or {})
-            self.send(conn, {"jsonrpc": "2.0", "id": req["id"], "result": result})
+            try:
+                self.send(conn, {"jsonrpc": "2.0", "id": req["id"], "result": result})
+            except OSError:
+                return             # closed by close()
 
     def handle(self, method, p):
         if method == "JSONRPC.Ping":
