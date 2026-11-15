@@ -4,7 +4,10 @@
 * converges Kodi on every (re)start: enables the bundled add-ons, enforces
   the settings in babua_lib.kodi_settings()
 * TV switched off (CEC) -> Kodi stops playback -> we blank the screen
-* TV switched on / any remote key -> screensaver ends -> last channel plays
+* TV switched on / any remote key -> screensaver ends -> last channel plays;
+  the first time each day or evening, it's the channel last watched at that
+  time of day instead (START_BY_TIME_OF_DAY: grandma's Georgian channels in
+  the daytime, grandpa's fights in the evening)
 * TV switched on (seen by polling it over CEC) -> switch it to our input, once:
   someone who then picks another input on purpose stays there
 * TV in standby for 5 minutes while a channel plays -> stop and blank, so the
@@ -19,6 +22,7 @@
   soak test), and stops a running soak test before it opens a channel
 """
 
+import datetime
 import json
 import os
 import socket
@@ -43,6 +47,29 @@ RECOVER_EVERY = 60             # after giving up, try the channel again this oft
 RECOVER_FOR = 12 * 3600        # ...for this long, while the TV is on (it pauses in standby)
 DOWN_ALERT_EVERY = 3600        # at most one "Channel down" alert an hour (flapping internet)
 CEC_OK_PATH = os.path.join(B.RUN_DIR, "cec_ok")   # touched when the TV answers over CEC; health reads it
+
+
+def hhmm(text, default):
+    """'17:00' -> minutes after midnight (default if missing or malformed)."""
+    try:
+        h, m = (int(x) for x in str(text).strip().split(":"))
+    except (ValueError, TypeError):
+        return default
+    return h * 60 + m if 0 <= h < 24 and 0 <= m < 60 else default
+
+
+def time_slot(cfg, now=None):
+    """Which half of the TV day it is: ("day" | "evening", that half's id).
+    The evening runs past midnight until DAY_STARTS, so 01:00 on the 6th
+    belongs to the evening of the 5th."""
+    t = datetime.datetime.fromtimestamp(time.time() if now is None else now)
+    day_at = hhmm(cfg.get("DAY_STARTS"), 5 * 60)
+    evening_at = hhmm(cfg.get("EVENING_STARTS"), 17 * 60)
+    minute = t.hour * 60 + t.minute
+    if day_at <= minute < evening_at:
+        return "day", f"{t.date()}/day"
+    date = t.date() if minute >= evening_at else t.date() - datetime.timedelta(days=1)
+    return "evening", f"{date}/evening"
 
 
 class Daemon:
@@ -75,13 +102,19 @@ class Daemon:
         if B.cfg_bool(self.cfg, "BLANK_WHEN_STOPPED", True):
             self.kodi.call("GUI.ActivateScreenSaver")
 
-    def play_last(self, reason, retry=False):
+    def play_last(self, reason, retry=False, wake=False):
+        """wake: the TV just came on (or woke on a key), so it may be time of
+        day's start channel rather than the last one."""
         now = time.monotonic()
         if not retry and now - self.last_open < OPEN_GRACE:
             # Kodi is still opening the last one (it isn't "playing" yet);
             # a second open makes it abort one and show an error box
             B.log(f"not opening again ({reason}): a channel is still starting")
             return
+        start = self.start_channel() if wake else None
+        if start is not None and start != self.current_channel:
+            reason += ", start channel for this time of day"
+            self.current_channel = start
         channel = self.current_channel or self.kodi.last_channel_id()
         if channel is None:
             B.log("no channels yet; nothing to play")
@@ -102,6 +135,48 @@ class Daemon:
                     self.kodi.play_channel(fallback)
                 except B.KodiError as exc2:
                     B.log("fallback play failed:", exc2)
+
+    # ------------------------------------------------- time-of-day start channel
+    def by_time_of_day(self):
+        return B.cfg_bool(self.cfg, "START_BY_TIME_OF_DAY", False)
+
+    def start_channel(self):
+        """The channel id to start on now, or None to carry on as before. Only
+        the first time the TV comes on in a day or evening half: a TV switched
+        off and on again within the same half resumes whatever was on."""
+        if not self.by_time_of_day():
+            return None
+        slot, period = time_slot(self.cfg)
+        if self.state.get("watched_in") == period:
+            return None
+        number = (self.state.get("start_channels") or {}).get(slot) \
+            or B.cfg_int(self.cfg, f"{slot.upper()}_CHANNEL", 0)
+        try:
+            channels = self.kodi.tv_channels()
+        except B.KodiError:
+            return None
+        return next((c["channelid"] for c in channels if c.get("channelnumber") == number), None)
+
+    def note_watching(self, channel_id):
+        """Remember the channel that's on, per half of the day: it's where
+        that half starts next time. Saved only when it changes (a few
+        writes a day)."""
+        if not self.by_time_of_day():
+            return
+        slot, period = time_slot(self.cfg)
+        try:
+            number = next((c.get("channelnumber") for c in self.kodi.tv_channels()
+                           if c["channelid"] == channel_id), None)
+        except B.KodiError:
+            return
+        if not number:
+            return
+        seen = self.state.setdefault("start_channels", {})
+        if seen.get(slot) == number and self.state.get("watched_in") == period:
+            return
+        seen[slot] = number
+        self.state["watched_in"] = period
+        self.save_state()
 
     def close_messages(self):
         """Close Kodi's OK boxes (e.g. "playlist playback aborted" after a
@@ -174,6 +249,8 @@ class Daemon:
             if method == "Player.OnAVStart":
                 self.av_started_at = now
                 self.pending = None
+                if item.get("type") == "channel" and item.get("id"):
+                    self.note_watching(item["id"])
                 if self.recover_until:
                     B.log("picture is back")
                     self.recover_until = 0.0
@@ -219,7 +296,7 @@ class Daemon:
                 return             # babuad is about to open it itself
             if B.cfg_bool(self.cfg, "RESUME_ON_WAKE", True) and not self.playing():
                 self.retries = 0
-                self.play_last("woken up")
+                self.play_last("woken up", wake=True)
 
     def on_pending(self, kind):
         if self.playing():
@@ -242,7 +319,7 @@ class Daemon:
             return
         if kind == "tv_on":
             self.retries = 0
-            self.play_last("TV turned on")
+            self.play_last("TV turned on", wake=True)
             return
         if kind == "resume":
             self.retries = 0
