@@ -393,6 +393,76 @@ class BabuadTest(unittest.TestCase):
         self.kodi.emit("GUI.OnScreensaverDeactivated", {})            # morning: TV on
         self.assertTrue(wait_for(lambda: self.kodi.playing == 12))
 
+    # ---------------------------------------------- time-of-day start channel
+    def start_by_time(self, slot):
+        """Daemon with START_BY_TIME_OF_DAY on; time_slot() reports `slot`
+        (a list, so a test can move the clock on)."""
+        self.kodi.channels += [
+            {"channelid": 13, "label": "Imedi", "channelnumber": 3, "lastplayed": ""},
+            {"channelid": 41, "label": "Fights", "channelnumber": 31, "lastplayed": ""},
+        ]
+        p = mock.patch.object(babuad, "time_slot", lambda cfg, now=None: slot[0])
+        p.start()
+        self.addCleanup(p.stop)
+        self.start()
+        self.daemon.cfg.update({"START_BY_TIME_OF_DAY": "1", "DAY_CHANNEL": "3", "EVENING_CHANNEL": "31"})
+
+    def tv_off_then_on(self):
+        self.kodi.handle("Player.Stop", {})
+        self.assertTrue(wait_for(lambda: self.kodi.playing is None))
+        threading.Event().wait(0.3)                                   # past OPEN_GRACE
+        self.kodi.emit("GUI.OnScreensaverDeactivated", {})
+
+    def test_evening_starts_on_the_evening_channel(self):
+        slot = [("day", "2026-11-16/day")]
+        self.start_by_time(slot)
+        self.kodi.handle("Player.Open", {"item": {"channelid": 12}})   # grandma's afternoon channel
+        self.assertTrue(wait_for(lambda: self.daemon.state.get("watched_in") == "2026-11-16/day"))
+        slot[0] = ("evening", "2026-11-16/evening")
+        self.tv_off_then_on()
+        self.assertTrue(wait_for(lambda: self.kodi.playing == 41))    # EVENING_CHANNEL 31, not 12
+        self.assertTrue(wait_for(lambda: self.daemon.state["start_channels"] == {"day": 2, "evening": 31}))
+
+    def test_same_half_of_the_day_resumes_what_was_on(self):
+        slot = [("evening", "2026-11-16/evening")]
+        self.start_by_time(slot)
+        self.kodi.handle("Player.Open", {"item": {"channelid": 11}})   # something else tonight
+        self.assertTrue(wait_for(lambda: self.daemon.state.get("watched_in") == "2026-11-16/evening"))
+        self.tv_off_then_on()                                         # off and on again, same evening
+        self.assertTrue(wait_for(lambda: self.kodi.playing == 11))
+
+    def test_next_morning_starts_on_the_last_daytime_channel(self):
+        slot = [("day", "2026-11-16/day")]
+        self.start_by_time(slot)
+        self.kodi.handle("Player.Open", {"item": {"channelid": 12}})   # Monday daytime: channel 2
+        self.assertTrue(wait_for(lambda: self.daemon.state.get("start_channels", {}).get("day") == 2))
+        slot[0] = ("evening", "2026-11-16/evening")
+        self.kodi.handle("Player.Open", {"item": {"channelid": 41}})   # evening: fights
+        self.assertTrue(wait_for(lambda: self.daemon.state.get("watched_in") == "2026-11-16/evening"))
+        slot[0] = ("day", "2026-11-17/day")
+        self.tv_off_then_on()
+        self.assertTrue(wait_for(lambda: self.kodi.playing == 12))    # remembered daytime channel, not fights
+
+    def test_start_by_time_off_resumes_as_before(self):
+        slot = [("evening", "2026-11-16/evening")]
+        self.start_by_time(slot)
+        self.daemon.cfg["START_BY_TIME_OF_DAY"] = "0"
+        self.kodi.handle("Player.Open", {"item": {"channelid": 12}})
+        self.tv_off_then_on()
+        self.assertTrue(wait_for(lambda: self.kodi.playing == 12))
+        self.assertNotIn("start_channels", self.daemon.state)
+
+    def test_time_slot_halves_of_the_day(self):
+        cfg = {"DAY_STARTS": "05:00", "EVENING_STARTS": "17:00"}
+        at = lambda s: time.mktime(time.strptime(s, "%Y-%m-%d %H:%M"))   # noqa: E731
+        self.assertEqual(babuad.time_slot(cfg, at("2026-11-16 10:30")), ("day", "2026-11-16/day"))
+        self.assertEqual(babuad.time_slot(cfg, at("2026-11-16 16:59")), ("day", "2026-11-16/day"))
+        self.assertEqual(babuad.time_slot(cfg, at("2026-11-16 17:00")), ("evening", "2026-11-16/evening"))
+        self.assertEqual(babuad.time_slot(cfg, at("2026-11-17 01:00")), ("evening", "2026-11-16/evening"))
+        self.assertEqual(babuad.time_slot({}, at("2026-11-17 05:00")), ("day", "2026-11-17/day"))
+        self.assertEqual(babuad.hhmm("25:00", 7), 7)
+        self.assertEqual(babuad.hhmm("junk", 7), 7)
+
     def end_clip(self):
         self.kodi.playing = None
         self.kodi.emit("Player.OnStop", {"item": {"type": "unknown"}, "end": True})

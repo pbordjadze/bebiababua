@@ -5,7 +5,8 @@ IPTV channels with no time limits. To them it's just the TV. To me it's a
 LibreELEC appliance I can manage completely from home over Tailscale.
 
 **What grandma does:** turns on the TV with her usual Samsung remote. The last
-channel she watched starts playing. Up/down changes channel. OK shows the
+channel watched at that time of day starts playing (Georgian in the daytime,
+grandpa's fights in the evening). Up/down changes channel. OK shows the
 channel list. Turning the TV off stops the stream. If something goes wrong, any
 button brings the picture back.
 
@@ -95,7 +96,9 @@ More situations and their fixes are in [docs/RUNBOOK.md](docs/RUNBOOK.md).
     is put back.
   - `babuad.py` talks to Kodi's local JSON-RPC. It enables the bundled add-ons
     and enforces settings. When the TV is turned off it blanks the screen;
-    when the TV comes on or any key is pressed it resumes the last channel. It
+    when the TV comes on or any key is pressed it resumes the last channel (the
+    first time each day or evening, the channel last watched at that time of
+    day: `START_BY_TIME_OF_DAY`). It
     retries a dying stream 3 times, then shows a message and sends an alert.
     It reloads the playlist only while nothing is playing.
   - `playlist.py` turns the provider's huge M3U into grandma's short, numbered,
