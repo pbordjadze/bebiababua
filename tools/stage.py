@@ -75,12 +75,16 @@ def check(cfg, site_dir):
         warnings.append("NTFY_URL empty - no alerts")
     if not cfg.get("HEARTBEAT_URL"):
         warnings.append("HEARTBEAT_URL empty - nobody notices if the box goes offline")
-    try:
-        sys.path.insert(0, os.path.join(REPO, "device", ".config", "babua", "bin"))
-        import playlist
-        playlist.load_channels(os.path.join(REPO, "config", "channels.toml"))
-    except Exception as exc:  # noqa: BLE001
-        errors.append(f"config/channels.toml: {exc}")
+    channels = os.path.join(site_dir, "channels.toml")
+    if not os.path.exists(channels):
+        errors.append("site/channels.toml missing - the channel list moved out of the repo on 2026-11-22. Restore it with: git show 934a5a6:config/channels.toml > site/channels.toml")
+    else:
+        try:
+            sys.path.insert(0, os.path.join(REPO, "device", ".config", "babua", "bin"))
+            import playlist
+            playlist.load_channels(channels)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"site/channels.toml: {exc}")
     return errors, warnings
 
 
@@ -137,10 +141,10 @@ def stage(out, site_dir, first_boot=True):
         os.chmod(os.path.join(bin_dir, name), 0o755)
     shutil.rmtree(os.path.join(bin_dir, "__pycache__"), ignore_errors=True)
 
-    # behaviour + channels + logos (committed)
+    # behaviour + logos (committed), channels (site/)
     babua_dir = os.path.join(out, ".config", "babua")
     shutil.copy(os.path.join(REPO, "config", "babua.conf"), babua_dir)
-    shutil.copy(os.path.join(REPO, "config", "channels.toml"), babua_dir)
+    shutil.copy(os.path.join(site_dir, "channels.toml"), babua_dir)
     shutil.copytree(os.path.join(REPO, "config", "logos"), os.path.join(babua_dir, "logos"),
                     dirs_exist_ok=True, ignore=shutil.ignore_patterns(".gitkeep"))
 

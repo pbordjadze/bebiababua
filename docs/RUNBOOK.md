@@ -122,7 +122,7 @@ reloads the units, re-applies Kodi settings, rebuilds the playlist and
 restarts the VPN only if its config changed. The repo stays the source of
 truth, and `tools/babua image` reproduces the same box at any time.
 
-- **Channels:** `config/channels.toml` → `tools/babua preview` → `deploy`.
+- **Channels:** `site/channels.toml` → `tools/babua preview` → `deploy`.
   Kodi picks up the new list the next time nothing is playing.
 - **Logos:** put PNGs in `config/logos/` and reference them as
   `logo = "file.png"`.

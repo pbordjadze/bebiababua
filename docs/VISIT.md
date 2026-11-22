@@ -15,7 +15,7 @@ don't need the visit either; they can be added later from home with
    - `NTFY_URL`, `NTFY_TOKEN`; `HEARTBEAT_URL` if you have one ready
    - `WIFI_SSID` / `WIFI_PSK` **only if there's no Ethernet near the TV**.
      You need their Wi-Fi password for that.
-   - Leave `IPTV_M3U_URL` empty. Uncomment test channel 99 in `config/channels.toml` for a picture.
+   - Leave `IPTV_M3U_URL` empty. Uncomment test channel 99 in `site/channels.toml` for a picture.
 3. **Add a backup SSH key** (e.g. your phone's) to `site/authorized_keys`.
 4. **Build:** `tools/babua check`, then `tools/babua image`. This needs Linux
    or Docker and produces `build/out/babua-tv-LibreELEC-12.2.1.img.gz`.
@@ -81,5 +81,5 @@ expected.
 ## Later, from home, once the subscription is known
 
 Put `IPTV_M3U_URL` into `site/secrets.env` → `tools/babua preview` →
-`tools/babua codecs` → edit `config/channels.toml` (and remove "Тест") →
+`tools/babua codecs` → edit `site/channels.toml` (and remove "Тест") →
 `tools/babua deploy`.
