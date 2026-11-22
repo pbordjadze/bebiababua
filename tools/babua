@@ -63,8 +63,9 @@ python_ok() {
 
 playlist_local() {
   python_ok
+  [ -f "$SITE/channels.toml" ] || die "site/channels.toml missing - the channel list moved out of the repo on 2026-11-22. Restore it with: git show 934a5a6:config/channels.toml > site/channels.toml"
   BABUA_STATE_DIR="$(mktemp -d)" python3 "$REPO/device/.config/babua/bin/playlist.py" \
-    --config "$REPO/config" --secrets "$SITE/secrets.env" "$@"
+    --config "$SITE" --secrets "$SITE/secrets.env" "$@"
 }
 
 cmd="${1:-help}"; shift || true
